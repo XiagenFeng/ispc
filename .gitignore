@@ -42,3 +42,4 @@ build/
 **/Debug
 **/Release
 lex.yy.c
+build*.bat
