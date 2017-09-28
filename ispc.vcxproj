@@ -5,9 +5,17 @@
       <Configuration>Debug</Configuration>
       <Platform>Win32</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Release|Win32">
       <Configuration>Release</Configuration>
       <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
@@ -55,6 +63,12 @@
     <ClCompile Include="$(Configuration)\gen-bitcode-generic-32-64bit.cpp" />
     <ClCompile Include="$(Configuration)\gen-bitcode-generic-64-32bit.cpp" />
     <ClCompile Include="$(Configuration)\gen-bitcode-generic-64-64bit.cpp" />
+    <ClCompile Include="$(Configuration)\gen-bitcode-neon-8-32bit.cpp" />
+    <ClCompile Include="$(Configuration)\gen-bitcode-neon-8-64bit.cpp" />
+    <ClCompile Include="$(Configuration)\gen-bitcode-neon-16-32bit.cpp" />
+    <ClCompile Include="$(Configuration)\gen-bitcode-neon-16-64bit.cpp" />
+    <ClCompile Include="$(Configuration)\gen-bitcode-neon-32-32bit.cpp" />
+    <ClCompile Include="$(Configuration)\gen-bitcode-neon-32-64bit.cpp" />
     <ClCompile Include="$(Configuration)\gen-bitcode-sse2-32bit.cpp" />
     <ClCompile Include="$(Configuration)\gen-bitcode-sse2-64bit.cpp" />
     <ClCompile Include="$(Configuration)\gen-bitcode-sse2-x2-32bit.cpp" />
@@ -365,6 +379,36 @@
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
+    <CustomBuild Include="builtins\target-neon-8.ll">
+      <FileType>Document</FileType>
+      <Command>m4 -Ibuiltins/ -DLLVM_VERSION=%LLVM_VERSION% -DBUILD_OS=WINDOWS -DRUNTIME=32 builtins/target-neon-8.ll | python bitcode2cpp.py builtins\target-neon-8.ll 32bit &gt; $(Configuration)/gen-bitcode-neon-8-32bit.cpp;
+               m4 -Ibuiltins/ -DLLVM_VERSION=%LLVM_VERSION% -DBUILD_OS=WINDOWS -DRUNTIME=64 builtins/target-neon-8.ll | python bitcode2cpp.py builtins\target-neon-8.ll 64bit &gt; $(Configuration)/gen-bitcode-neon-8-64bit.cpp</Command>
+      <Outputs>$(Configuration)/gen-bitcode-neon-8-32bit.cpp; $(Configuration)/gen-bitcode-neon-8-64bit.cpp</Outputs>
+      <AdditionalInputs>builtins\util.m4;builtins\svml.m4;builtins\target-neon-common.ll</AdditionalInputs>
+      <Message>Building gen-bitcode-neon-8-32bit.cpp and gen-bitcode-neon-8-64bit.cpp</Message>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="builtins\target-neon-16.ll">
+      <FileType>Document</FileType>
+      <Command>m4 -Ibuiltins/ -DLLVM_VERSION=%LLVM_VERSION% -DBUILD_OS=WINDOWS -DRUNTIME=32 builtins/target-neon-16.ll | python bitcode2cpp.py builtins\target-neon-16.ll 32bit &gt; $(Configuration)/gen-bitcode-neon-16-32bit.cpp;
+               m4 -Ibuiltins/ -DLLVM_VERSION=%LLVM_VERSION% -DBUILD_OS=WINDOWS -DRUNTIME=64 builtins/target-neon-16.ll | python bitcode2cpp.py builtins\target-neon-16.ll 64bit &gt; $(Configuration)/gen-bitcode-neon-16-64bit.cpp</Command>
+      <Outputs>$(Configuration)/gen-bitcode-neon-16-32bit.cpp; $(Configuration)/gen-bitcode-neon-16-64bit.cpp</Outputs>
+      <AdditionalInputs>builtins\util.m4;builtins\svml.m4;builtins\target-neon-common.ll</AdditionalInputs>
+      <Message>Building gen-bitcode-neon-16-32bit.cpp and gen-bitcode-neon-16-64bit.cpp</Message>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="builtins\target-neon-32.ll">
+      <FileType>Document</FileType>
+      <Command>m4 -Ibuiltins/ -DLLVM_VERSION=%LLVM_VERSION% -DBUILD_OS=WINDOWS -DRUNTIME=32 builtins/target-neon-32.ll | python bitcode2cpp.py builtins\target-neon-32.ll 32bit &gt; $(Configuration)/gen-bitcode-neon-32-32bit.cpp;
+               m4 -Ibuiltins/ -DLLVM_VERSION=%LLVM_VERSION% -DBUILD_OS=WINDOWS -DRUNTIME=64 builtins/target-neon-32.ll | python bitcode2cpp.py builtins\target-neon-32.ll 64bit &gt; $(Configuration)/gen-bitcode-neon-32-64bit.cpp</Command>
+      <Outputs>$(Configuration)/gen-bitcode-neon-32-32bit.cpp; $(Configuration)/gen-bitcode-neon-32-64bit.cpp</Outputs>
+      <AdditionalInputs>builtins\util.m4;builtins\svml.m4;builtins\target-neon-common.ll</AdditionalInputs>
+      <Message>Building gen-bitcode-neon-32-32bit.cpp and gen-bitcode-neon-32-64bit.cpp</Message>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
     <CustomBuild Include="lex.ll">
       <FileType>Document</FileType>
       <Command>flex -t lex.ll &gt; $(Configuration)\lex.cc</Command>
@@ -393,7 +437,20 @@
     <CharacterSet>Unicode</CharacterSet>
     <PlatformToolset>v141</PlatformToolset>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v141</PlatformToolset>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v141</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -406,14 +463,26 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -421,7 +490,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>NOMINMAX;%LLVM_VERSION%</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ISPC_ARM_ENABLED;NOMINMAX;%LLVM_VERSION%;</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(LLVM_INSTALL_DIR)\include;.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4146;4800;4996;4355;4624;4244;4141;4291;4018</DisableSpecificWarnings>
     </ClCompile>
@@ -429,7 +498,31 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(LLVM_INSTALL_DIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>clangFrontend.lib;clangDriver.lib;clangSerialization.lib;clangParse.lib;clangSema.lib;clangAnalysis.lib;clangEdit.lib;clangAST.lib;clangLex.lib;clangBasic.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBitReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMExecutionEngine.lib;LLVMInstCombine.lib;LLVMInstrumentation.lib;LLVMLinker.lib;LLVMMC.lib;LLVMMCParser.lib;LLVMObject.lib;LLVMScalarOpts.lib;LLVMSelectionDAG.lib;LLVMSupport.lib;LLVMTarget.lib;LLVMTransformUtils.lib;LLVMX86ASMPrinter.lib;LLVMX86ASMParser.lib;LLVMX86Utils.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Disassembler.lib;LLVMX86Info.lib;LLVMipo.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>clangFrontend.lib;clangDriver.lib;clangSerialization.lib;clangParse.lib;clangSema.lib;clangAnalysis.lib;clangEdit.lib;clangAST.lib;clangLex.lib;clangBasic.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBitReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMExecutionEngine.lib;LLVMInstCombine.lib;LLVMInstrumentation.lib;LLVMLinker.lib;LLVMMC.lib;LLVMMCParser.lib;LLVMObject.lib;LLVMScalarOpts.lib;LLVMSelectionDAG.lib;LLVMSupport.lib;LLVMTarget.lib;LLVMTransformUtils.lib;LLVMX86ASMPrinter.lib;LLVMX86ASMParser.lib;LLVMX86Utils.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Disassembler.lib;LLVMX86Info.lib;LLVMARMAsmParser.lib;LLVMARMAsmPrinter.lib;LLVMARMCodeGen.lib;LLVMARMDesc.lib;LLVMARMDisassembler.lib;LLVMARMInfo.lib;LLVMARMUtils.lib;LLVMipo.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'AND'$(LLVM_VERSION)'!='LLVM_3_9'AND'$(LLVM_VERSION)'!='LLVM_4_0'">LLVMBinaryFormat.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'AND'$(LLVM_VERSION)'!='LLVM_3_9'">LLVMDebugInfoMSF.lib;LLVMGlobalISel.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'">LLVMDebugInfoCodeView.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'=='LLVM_3_2'OR'$(LLVM_VERSION)'=='LLVM_3_3'OR'$(LLVM_VERSION)'=='LLVM_3_4'OR'$(LLVM_VERSION)'=='LLVM_3_5'OR'$(LLVM_VERSION)'=='LLVM_3_6'OR'$(LLVM_VERSION)'=='LLVM_3_7'">LLVMipa.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'">LLVMIRReader.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'">LLVMProfileData.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'">LLVMMCDisassembler.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'">LLVMOption.lib;LLVMSupport.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>ISPC_ARM_ENABLED;NOMINMAX;%LLVM_VERSION%;</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(LLVM_INSTALL_DIR)\include;.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableSpecificWarnings>4146;4800;4996;4355;4624;4244;4141;4291;4018</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>$(LLVM_INSTALL_DIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>clangFrontend.lib;clangDriver.lib;clangSerialization.lib;clangParse.lib;clangSema.lib;clangAnalysis.lib;clangEdit.lib;clangAST.lib;clangLex.lib;clangBasic.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBitReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMExecutionEngine.lib;LLVMInstCombine.lib;LLVMInstrumentation.lib;LLVMLinker.lib;LLVMMC.lib;LLVMMCParser.lib;LLVMObject.lib;LLVMScalarOpts.lib;LLVMSelectionDAG.lib;LLVMSupport.lib;LLVMTarget.lib;LLVMTransformUtils.lib;LLVMX86ASMPrinter.lib;LLVMX86ASMParser.lib;LLVMX86Utils.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Disassembler.lib;LLVMX86Info.lib;LLVMARMAsmParser.lib;LLVMARMAsmPrinter.lib;LLVMARMCodeGen.lib;LLVMARMDesc.lib;LLVMARMDisassembler.lib;LLVMARMInfo.lib;LLVMARMUtils.lib;LLVMipo.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'AND'$(LLVM_VERSION)'!='LLVM_3_9'AND'$(LLVM_VERSION)'!='LLVM_4_0'">LLVMBinaryFormat.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'AND'$(LLVM_VERSION)'!='LLVM_3_9'">LLVMDebugInfoMSF.lib;LLVMGlobalISel.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'">LLVMDebugInfoCodeView.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -447,7 +540,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>NOMINMAX;%LLVM_VERSION%;NDEBUG</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ISPC_ARM_ENABLED;NOMINMAX;%LLVM_VERSION%;NDEBUG</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>$(LLVM_INSTALL_DIR)\include;.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4146;4800;4996;4355;4624;4244;4141;4291;4018</DisableSpecificWarnings>
     </ClCompile>
@@ -457,7 +550,35 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalLibraryDirectories>$(LLVM_INSTALL_DIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>clangFrontend.lib;clangDriver.lib;clangSerialization.lib;clangParse.lib;clangSema.lib;clangAnalysis.lib;clangEdit.lib;clangAST.lib;clangLex.lib;clangBasic.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBitReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMExecutionEngine.lib;LLVMInstCombine.lib;LLVMInstrumentation.lib;LLVMLinker.lib;LLVMMC.lib;LLVMMCParser.lib;LLVMObject.lib;LLVMScalarOpts.lib;LLVMSelectionDAG.lib;LLVMSupport.lib;LLVMTarget.lib;LLVMTransformUtils.lib;LLVMX86ASMPrinter.lib;LLVMX86ASMParser.lib;LLVMX86Utils.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Disassembler.lib;LLVMX86Info.lib;LLVMipo.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>clangFrontend.lib;clangDriver.lib;clangSerialization.lib;clangParse.lib;clangSema.lib;clangAnalysis.lib;clangEdit.lib;clangAST.lib;clangLex.lib;clangBasic.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBitReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMExecutionEngine.lib;LLVMInstCombine.lib;LLVMInstrumentation.lib;LLVMLinker.lib;LLVMMC.lib;LLVMMCParser.lib;LLVMObject.lib;LLVMScalarOpts.lib;LLVMSelectionDAG.lib;LLVMSupport.lib;LLVMTarget.lib;LLVMTransformUtils.lib;LLVMX86ASMPrinter.lib;LLVMX86ASMParser.lib;LLVMX86Utils.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Disassembler.lib;LLVMX86Info.lib;LLVMARMAsmParser.lib;LLVMARMAsmPrinter.lib;LLVMARMCodeGen.lib;LLVMARMDesc.lib;LLVMARMDisassembler.lib;LLVMARMInfo.lib;LLVMARMUtils.lib;LLVMipo.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'AND'$(LLVM_VERSION)'!='LLVM_3_9'AND'$(LLVM_VERSION)'!='LLVM_4_0'">LLVMBinaryFormat.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'AND'$(LLVM_VERSION)'!='LLVM_3_9'">LLVMDebugInfoMSF.lib;LLVMGlobalISel.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'">LLVMDebugInfoCodeView.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'=='LLVM_3_2'OR'$(LLVM_VERSION)'=='LLVM_3_3'OR'$(LLVM_VERSION)'=='LLVM_3_4'OR'$(LLVM_VERSION)'=='LLVM_3_5'OR'$(LLVM_VERSION)'=='LLVM_3_6'OR'$(LLVM_VERSION)'=='LLVM_3_7'">LLVMipa.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'">LLVMIRReader.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'">LLVMProfileData.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'">LLVMMCDisassembler.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'">LLVMOption.lib;LLVMSupport.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>ISPC_ARM_ENABLED;NOMINMAX;%LLVM_VERSION%;NDEBUG</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(LLVM_INSTALL_DIR)\include;.;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableSpecificWarnings>4146;4800;4996;4355;4624;4244;4141;4291;4018</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(LLVM_INSTALL_DIR)\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>clangFrontend.lib;clangDriver.lib;clangSerialization.lib;clangParse.lib;clangSema.lib;clangAnalysis.lib;clangEdit.lib;clangAST.lib;clangLex.lib;clangBasic.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBitReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMExecutionEngine.lib;LLVMInstCombine.lib;LLVMInstrumentation.lib;LLVMLinker.lib;LLVMMC.lib;LLVMMCParser.lib;LLVMObject.lib;LLVMScalarOpts.lib;LLVMSelectionDAG.lib;LLVMSupport.lib;LLVMTarget.lib;LLVMTransformUtils.lib;LLVMX86ASMPrinter.lib;LLVMX86ASMParser.lib;LLVMX86Utils.lib;LLVMX86CodeGen.lib;LLVMX86Desc.lib;LLVMX86Disassembler.lib;LLVMX86Info.lib;LLVMARMAsmParser.lib;LLVMARMAsmPrinter.lib;LLVMARMCodeGen.lib;LLVMARMDesc.lib;LLVMARMDisassembler.lib;LLVMARMInfo.lib;LLVMARMUtils.lib;LLVMipo.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'AND'$(LLVM_VERSION)'!='LLVM_3_9'AND'$(LLVM_VERSION)'!='LLVM_4_0'">LLVMBinaryFormat.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'AND'$(LLVM_VERSION)'!='LLVM_3_9'">LLVMDebugInfoMSF.lib;LLVMGlobalISel.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalDependencies Condition="'$(LLVM_VERSION)'!='LLVM_3_2'AND'$(LLVM_VERSION)'!='LLVM_3_3'AND'$(LLVM_VERSION)'!='LLVM_3_4'AND'$(LLVM_VERSION)'!='LLVM_3_5'AND'$(LLVM_VERSION)'!='LLVM_3_6'AND'$(LLVM_VERSION)'!='LLVM_3_7'AND'$(LLVM_VERSION)'!='LLVM_3_8'">LLVMDebugInfoCodeView.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>

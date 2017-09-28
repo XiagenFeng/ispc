@@ -71,7 +71,7 @@ endif
 
 # Enable ARM by request
 # To enable: make ARM_ENABLED=1
-ARM_ENABLED=0
+ARM_ENABLED=1
 
 # Disable NVPTX by request
 # To enable: make NVPTX_ENABLED=1
