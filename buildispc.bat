@@ -8,5 +8,5 @@ set LLVM_VERSION=LLVM_6_0
 REM Both the LLVM binaries and python need to be in the path
 set path=%LLVM_INSTALL_DIR%\bin;%PATH%
 
-msbuild ispc.vcxproj /V:m /p:Platform=Win32 /p:Configuration=Release /t:rebuild
+msbuild ispc.vcxproj /V:m /p:Platform=X64 /p:Configuration=Release /t:rebuild
 
