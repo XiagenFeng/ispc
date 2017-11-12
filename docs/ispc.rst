@@ -54,6 +54,7 @@ Contents:
   + `Updating ISPC Programs For Changes In ISPC 1.8.2`_
   + `Updating ISPC Programs For Changes In ISPC 1.9.0`_
   + `Updating ISPC Programs For Changes In ISPC 1.9.1`_
+  + `Updating ISPC Programs For Changes In ISPC 1.9.2`_
 
 * `Getting Started with ISPC`_
 
@@ -351,6 +352,12 @@ Updating ISPC Programs For Changes In ISPC 1.9.1
 
 The release doesn't contains language changes, which may affect compatibility with
 older versions. It introduces new AVX512 target: avx512skx-i32x16.
+
+Updating ISPC Programs For Changes In ISPC 1.9.2
+------------------------------------------------
+
+The release doesn't contain language changes, which may affect compatibility with
+older versions.
 
 
 Getting Started with ISPC
@@ -2970,7 +2977,7 @@ is only visible in the file in which it was declared.
 
 ::
 
-    static void lerp(float t, float a, float b) {
+    static float lerp(float t, float a, float b) {
         return (1.-t)*a + t*b;
     }
 
@@ -5165,7 +5172,7 @@ countries.
 
 * Other names and brands may be claimed as the property of others.
 
-Copyright(C) 2011-2016, Intel Corporation. All rights reserved.
+Copyright(C) 2011-2017, Intel Corporation. All rights reserved.
 
 
 Optimization Notice
