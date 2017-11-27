@@ -905,9 +905,9 @@ lCheckForStructParameters(const FunctionType *ftype, SourcePos pos) {
     for (int i = 0; i < ftype->GetNumParameters(); ++i) {
         const Type *type = ftype->GetParameterType(i);
         if (CastType<StructType>(type) != NULL) {
-            Error(pos, "Passing structs to/from application functions is "
-                  "currently broken.  Use a pointer or const pointer to the "
-                  "struct instead for now.");
+            Error(pos, "Passing structs to/from application functions by value"
+                "is currently not supported. Use a reference, a const reference, "
+                "a pointer, or a const pointer to the struct instead.");
             return;
         }
     }
@@ -1532,8 +1532,10 @@ Module::writeObjectFileOrAssembly(llvm::TargetMachine *targetMachine,
 
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
     llvm::tool_output_file *of = new llvm::tool_output_file(outFileName, error, flags);
-#else // LLVM 3.7+
+#elif ISPC_LLVM_VERSION <= ISPC_LLVM_5_0 // LLVM 3.7-5.0
     std::unique_ptr<llvm::tool_output_file> of (new llvm::tool_output_file(outFileName, error, flags));
+#else // LLVM 6.0+
+    std::unique_ptr<llvm::ToolOutputFile> of (new llvm::ToolOutputFile(outFileName, error, flags));
 #endif
 
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_3_5
