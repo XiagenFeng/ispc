@@ -142,6 +142,10 @@ ifeq ($(ARCH_OS2),Msys)
 	ISPC_LIBS += -lshlwapi -limagehlp -lpsapi
 endif
 
+ifeq ($(ARCH_OS),FreeBSD)
+	ISPC_LIBS += -lexecinfo
+endif
+
 # Define build time stamp and revision.
 # For revision we use GIT or SVN info.
 BUILD_DATE=$(shell date +%Y%m%d)
@@ -198,7 +202,7 @@ YACC=bison -d -v -t
 
 CXX_SRC=ast.cpp builtins.cpp cbackend.cpp ctx.cpp decl.cpp expr.cpp func.cpp \
 	ispc.cpp llvmutil.cpp main.cpp module.cpp opt.cpp stmt.cpp sym.cpp \
-	type.cpp util.cpp quick_fix.cpp
+	type.cpp util.cpp
 HEADERS=ast.h builtins.h ctx.h decl.h expr.h func.h ispc.h llvmutil.h module.h \
 	opt.h stmt.h sym.h type.h util.h
 TARGETS=avx2-i64x4 avx11-i64x4 avx1-i64x4 avx1 avx1-x2 avx11 avx11-x2 avx2 avx2-x2 \

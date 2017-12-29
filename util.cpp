@@ -43,7 +43,11 @@
 #include <malloc.h> // for alloca()
 #endif
 #else
+#ifdef __FreeBSD__
+#include <cstdlib>
+#else
 #include <alloca.h>
+#endif
 #include <unistd.h>
 #endif
 #include <stdio.h>
