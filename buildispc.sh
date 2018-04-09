@@ -7,7 +7,7 @@ LLVM_HOME=$LLVM_INSTALL_DIR
 LLVM_VERSION=LLVM_7_0
 
 # Both the LLVM binaries and python need to be in the path
-PATH=$LLVM_INSTALL_DIR/bin:$PATH
+PATH=$LLVM_INSTALL_DIR/bin:/opt/local/bin:$PATH
 
 gmake
 cp -v ispc ../../`uname -s`/bin/
