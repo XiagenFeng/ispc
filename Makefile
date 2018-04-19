@@ -101,7 +101,7 @@ ifeq ($(shell $(LLVM_CONFIG) --components |grep -c option), 1)
     LLVM_COMPONENTS+=option
 endif
 ifneq ($(ARM_ENABLED), 0)
-    LLVM_COMPONENTS+=arm
+    LLVM_COMPONENTS+=arm AArch64
 endif
 ifneq ($(NVPTX_ENABLED), 0)
     LLVM_COMPONENTS+=nvptx
