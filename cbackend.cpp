@@ -93,6 +93,9 @@
 #include "llvm/CodeGen/IntrinsicLowering.h"
 //#include "llvm/Target/Mangler.h"
 #include "llvm/Transforms/Scalar.h"
+#if ISPC_LLVM_VERSION >= ISPC_LLVM_7_0
+  #include "llvm/Transforms/Utils.h"
+#endif
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInstrInfo.h"
@@ -1629,7 +1632,7 @@ void CWriter::printConstant(llvm::Constant *CPV, bool Static) {
       Out << "\"";
       //const uint64_t *Ptr64 = CPV->getUniqueInteger().getRawData();
       const uint64_t *Ptr64 = CI->getValue().getRawData();
-      for (int i = 0; i < Ty->getPrimitiveSizeInBits(); i++) {
+      for (unsigned i = 0; i < Ty->getPrimitiveSizeInBits(); i++) {
         Out << ((Ptr64[i / (sizeof (uint64_t) * 8)] >> (i % (sizeof (uint64_t) * 8))) & 1);
       }
       Out << "\"";
@@ -4187,8 +4190,10 @@ void CWriter::lowerIntrinsics(llvm::Function &F) {
 #define Intrinsic llvm::Intrinsic
 #if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
   #include "llvm/Intrinsics.gen"
-#else /* LLVM 3.3+ */
+#elif ISPC_LLVM_VERSION <= ISPC_LLVM_6_0 /* LLVM 3.3-6.0 */
   #include "llvm/IR/Intrinsics.gen"
+#else /* LLVM 7.0+ */
+  #include "llvm/IR/Intrinsics.inc"
 #endif
 #undef Intrinsic
 #undef GET_GCC_BUILTIN_NAME
@@ -4419,8 +4424,10 @@ bool CWriter::visitBuiltinCall(llvm::CallInst &I, llvm::Intrinsic::ID ID,
 #define Intrinsic llvm::Intrinsic
 #if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
   #include "llvm/Intrinsics.gen"
-#else /* LLVM 3.3+ */
+#elif ISPC_LLVM_VERSION <= ISPC_LLVM_6_0 /* LLVM 3.3-6.0 */
   #include "llvm/IR/Intrinsics.gen"
+#else /* LLVM 7.0+ */
+  #include "llvm/IR/Intrinsics.inc"
 #endif
 #undef Intrinsic
 #undef GET_GCC_BUILTIN_NAME
