@@ -45,6 +45,7 @@
 #ifdef ISPC_IS_WINDOWS
   #include <windows.h>
   #include <direct.h>
+  #include <intrin.h>
   #define strcasecmp stricmp
 #else
   #include <sys/types.h>

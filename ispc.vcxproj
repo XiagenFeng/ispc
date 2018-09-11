@@ -103,7 +103,6 @@
       <Message>Building builtins.c</Message>
       <Outputs>$(Configuration)/gen-bitcode-c-32.cpp;$(Configuration)/gen-bitcode-c-64.cpp</Outputs>
     </CustomBuild>
-    <ClCompile Include="quick_fix.cpp" />
     <ClCompile Include="stmt.cpp" />
     <ClCompile Include="sym.cpp" />
     <ClCompile Include="type.cpp" />
