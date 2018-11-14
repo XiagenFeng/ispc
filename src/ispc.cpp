@@ -47,6 +47,9 @@
   #include <direct.h>
   #include <intrin.h>
   #define strcasecmp stricmp
+  #if ISPC_LLVM_VERSION >= ISPC_LLVM_7_0
+    #include <intrin.h>
+  #endif
 #else
   #include <sys/types.h>
   #include <unistd.h>
