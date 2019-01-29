@@ -28,7 +28,7 @@
    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.  
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /* Author: Tomasz Koziara */
@@ -51,6 +51,7 @@ task void histogram (uniform int span, uniform int n, uniform int64 code[], unif
   {
     unsigned int8 *c = (unsigned int8*) &code[k];
 
+    #pragma ignore warning(perf)
     g[c[pass]] ++;
   }
 
@@ -60,6 +61,7 @@ task void histogram (uniform int span, uniform int n, uniform int64 code[], unif
     {
       unsigned int8 *c = (unsigned int8*) &code[k];
 
+      #pragma ignore warning(perf)
       g[c[pass]] ++;
     }
   }
@@ -88,10 +90,13 @@ task void permutation (uniform int span, uniform int n, uniform int64 code[], un
   {
     unsigned int8 *c = (unsigned int8*) &code[k];
 
+    #pragma ignore warning(perf)
     int l = g[c[pass]];
 
+    #pragma ignore warning(perf)
     perm[l] = code[k];
 
+    #pragma ignore warning(perf)
     g[c[pass]] = l+1;
   }
 
@@ -103,6 +108,7 @@ task void permutation (uniform int span, uniform int n, uniform int64 code[], un
 
       int l = g[c[pass]];
 
+      #pragma ignore warning(perf)
       perm[l] = code[k];
 
       g[c[pass]] = l+1;

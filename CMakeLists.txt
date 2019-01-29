@@ -35,14 +35,38 @@
 #
 cmake_minimum_required(VERSION 3.8)
 
-set(PROJECT_NAME ispc)
-project(${PROJECT_NAME} CXX)
+if (UNIX)
+    set(CMAKE_C_COMPILER "clang")
+    set(CMAKE_CXX_COMPILER "clang++")
+endif()
 
-option(ARM_ENABLED "Enable ARM support OFF")
-option(NVPTX_ENABLED "Enable NVPTX support OFF")
+set(PROJECT_NAME ispc)
+set(ISPC_BUILD TRUE)
+project(${PROJECT_NAME})
+
+option(ARM_ENABLED "Enable ARM support" OFF)
+option(NVPTX_ENABLED "Enable NVPTX support" OFF)
+option(ISPC_INCLUDE_EXAMPLES "Generate build targets for the ISPC examples" ON)
+option(ISPC_INCLUDE_TESTS "Generate build targets for the ISPC tests." ON)
+option(ISPC_INCLUDE_UTILS "Generate build targets for the utils." ON)
+option(ISPC_PREPARE_PACKAGE "Generate build targets for ispc package" OFF)
+
+if (UNIX)
+    option(ISPC_STATIC_STDCXX_LINK "Link statically with libstdc++ and libgcc" OFF)
+    if (ISPC_PREPARE_PACKAGE AND (NOT APPLE))
+        option(ISPC_STATIC_LINK "Link statically" ON)
+    else()
+        option(ISPC_STATIC_LINK "Link statically" OFF)
+    endif()
+    option(ISPC_USE_ASAN "Build ispc with address sanitizer instrumentation using clang compiler" OFF)
+endif()
+
+# Use solution folders.
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(OUTPUT_DEBUG Debug/bin)
 set(OUTPUT_RELEASE Release/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin )
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
@@ -59,19 +83,15 @@ find_package(PythonInterp 2.7 REQUIRED)
     if (NOT PYTHONINTERP_FOUND)
         message(FATAL_ERROR "Python interpreter is not found")
     endif()
-    if (WIN32)
-        # For correct VS project the path should be in quotes
-        set(PYTHON_EXECUTABLE \"${PYTHON_EXECUTABLE}\")
-    endif()
 
 find_package(BISON 2.4 REQUIRED)
     if (BISON_FOUND)
-        set(BISON_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/parse.yy)
+        set(BISON_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/parse.yy)
         set(BISON_CPP_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.cc)
         set(BISON_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.hh
                          ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.output)
         if (WIN32)
-            win_path_to_cygwin(${BISON_INPUT} BISON_INPUT)
+            win_path_to_cygwin(${BISON_INPUT} ${BISON_EXECUTABLE} BISON_INPUT)
         endif()
         add_custom_command (
             OUTPUT ${BISON_CPP_OUTPUT} ${BISON_OUTPUT}
@@ -84,10 +104,10 @@ find_package(BISON 2.4 REQUIRED)
 
 find_package(FLEX 2.5 REQUIRED)
     if (FLEX_FOUND)
-        set(FLEX_INPUT  ${CMAKE_CURRENT_SOURCE_DIR}/lex.ll)
+        set(FLEX_INPUT  ${CMAKE_CURRENT_SOURCE_DIR}/src/lex.ll)
         set(FLEX_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/lex.cpp)
         if (WIN32)
-            win_path_to_cygwin(${FLEX_INPUT} FLEX_INPUT)
+            win_path_to_cygwin(${FLEX_INPUT} ${FLEX_EXECUTABLE} FLEX_INPUT)
         endif()
         add_custom_command(
             OUTPUT ${FLEX_OUTPUT}
@@ -126,7 +146,8 @@ generate_common_builtins(BUILTIN_CPP_FILES)
 generate_stdlib(STDLIB_FILES ${ISPC_MASKS})
 
 add_executable(${PROJECT_NAME} ${BUILTIN_FILES} ${BUILTIN_CPP_FILES}
-               ${STDLIB_FILES} ${BISON_CPP_OUTPUT} ${FLEX_OUTPUT})
+               ${STDLIB_FILES} ${BISON_CPP_OUTPUT} ${FLEX_OUTPUT}
+               ${CMAKE_CURRENT_SOURCE_DIR}/stdlib.ispc)
 
 target_sources(${PROJECT_NAME}
     PRIVATE
@@ -161,7 +182,14 @@ target_sources(${PROJECT_NAME}
         "src/type.h"
         "src/util.cpp"
         "src/util.h"
+        "src/parse.yy"
+        "src/lex.ll"
 )
+# To show stdlib.ispc in VS solution:
+if (WIN32)
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/stdlib.ispc" PROPERTIES HEADER_FILE_ONLY TRUE)
+    source_group("ISPC" FILES "${CMAKE_CURRENT_SOURCE_DIR}/stdlib.ispc")
+endif()
 
 # Build definitions
 target_compile_definitions(${PROJECT_NAME} PRIVATE ${LLVM_VERSION})
@@ -203,6 +231,9 @@ if (${LLVM_VERSION_NUMBER} VERSION_GREATER "3.4.0")
     if (UNIX)
         set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
         target_compile_options(${PROJECT_NAME} PRIVATE -Wno-c99-extensions -Wno-deprecated-register -fno-rtti)
+        if (ISPC_USE_ASAN)
+            target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
+        endif()
     endif()
 endif()
 
@@ -211,6 +242,18 @@ if (WIN32)
     if (NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
         set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/OPT:REF /OPT:ICF")
     endif()
+endif()
+
+if (ISPC_STATIC_STDCXX_LINK)
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-static-libgcc -static-libstdc++")
+endif()
+
+if (ISPC_STATIC_LINK)
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-static")
+endif()
+
+if (ISPC_USE_ASAN)
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-fsanitize=address")
 endif()
 
 # Link against Clang libraries
@@ -239,4 +282,61 @@ else()
     endif()
 endif()
 
+# Build target for utility checking host ISA
+if (ISPC_INCLUDE_UTILS)
+    add_executable(check_isa "")
+    target_sources(check_isa PRIVATE check_isa.cpp)
+    set_target_properties(check_isa PROPERTIES FOLDER "Utils")
+    if (NOT ISPC_PREPARE_PACKAGE)
+        install (TARGETS check_isa DESTINATION bin)
+    endif()
+endif()
+
+if (ISPC_INCLUDE_EXAMPLES AND NOT ISPC_PREPARE_PACKAGE)
+    add_subdirectory(examples)
+endif()
+
+if (ISPC_INCLUDE_TESTS AND NOT ISPC_PREPARE_PACKAGE)
+    add_subdirectory(tests)
+endif()
+
+# Install
 install (TARGETS ${PROJECT_NAME} DESTINATION bin)
+if (ISPC_PREPARE_PACKAGE)
+    install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION examples)
+    install (DIRECTORY "${PROJECT_SOURCE_DIR}/contrib/" DESTINATION contrib)
+    install (FILES "${PROJECT_SOURCE_DIR}/LICENSE.txt" DESTINATION .)
+    install (FILES "${PROJECT_SOURCE_DIR}/docs/ReleaseNotes.txt" DESTINATION .)
+    include(ExternalProject)
+    ExternalProject_Add(ispc_web
+      GIT_REPOSITORY    https://github.com/ispc/ispc.github.com.git
+      PREFIX ispc_web
+      SOURCE_DIR ispc_web/repo
+      CONFIGURE_COMMAND cmake -E echo "Skipping configure step."
+      BUILD_COMMAND cmake -E echo "Skipping build step."
+      INSTALL_COMMAND cmake -E echo "Skipping install step."
+    )
+    ExternalProject_Get_Property(ispc_web SOURCE_DIR)
+    set(ISPC_WEB_SOURCE_DIR "${SOURCE_DIR}")
+    set(ISPC_DOCS  ${ISPC_WEB_SOURCE_DIR}/faq.html
+                   ${ISPC_WEB_SOURCE_DIR}/ispc.html
+                   ${ISPC_WEB_SOURCE_DIR}/perfguide.html)
+
+    install(FILES ${ISPC_DOCS} DESTINATION .)
+    install(DIRECTORY "${ISPC_WEB_SOURCE_DIR}/css" DESTINATION css)
+
+    # CPack configuration
+    if (WIN32)
+        set(CPACK_GENERATOR "ZIP")
+    else()
+        set(CPACK_GENERATOR "TGZ")
+    endif()
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
+    # Get ispc version
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/ispc_version.h" ispc_ver)
+    string(REGEX MATCH "ISPC_VERSION \"([0-9]*)\.([0-9]*)\.([0-9]*[a-z]*)" _ ${ispc_ver})
+    set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
+    set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
+    set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_MATCH_3})
+    include(CPack)
+endif()

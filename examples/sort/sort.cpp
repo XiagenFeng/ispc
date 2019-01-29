@@ -28,7 +28,7 @@
    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.  
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 /* Author: Tomasz Koziara */
@@ -62,7 +62,7 @@ static void progressBar(const int x, const int n, const int width = 50)
     bstr += i < w ? '=' : ' ';
   bstr += "]";
 
-  // print percentage 
+  // print percentage
   std::stringstream pstr0;
   pstr0 << " " << static_cast<int>(f*100.0) << " % ";
   const std::string pstr(pstr0.str());
@@ -135,7 +135,7 @@ int main (int argc, char *argv[])
 
   printf("\t\t\t\t(%.2fx speedup from ISPC, %.2fx speedup from ISPC + tasks)\n", tSerial/tISPC1, tSerial/tISPC2);
 
-  delete code;
-  delete order;
+  delete[] code;
+  delete[] order;
   return 0;
 }

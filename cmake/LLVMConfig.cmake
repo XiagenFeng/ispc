@@ -42,32 +42,41 @@ find_package(LLVM REQUIRED CONFIG)
     message(STATUS "Found LLVM ${LLVM_VERSION}")
 
 find_program(LLVM_CONFIG_EXECUTABLE NAMES llvm-config
-    PATHS ${LLVM_TOOLS_BINARY_DIR}/bin)
+    PATHS ${LLVM_TOOLS_BINARY_DIR} PATH_SUFFIXES bin NO_DEFAULT_PATH)
     if (NOT LLVM_CONFIG_EXECUTABLE)
         message(FATAL_ERROR "Failed to find llvm-config")
     endif()
     message(STATUS "LLVM_CONFIG_EXECUTABLE: ${LLVM_CONFIG_EXECUTABLE}")
 
 find_program(CLANG_EXECUTABLE NAMES clang
-    PATHS ${LLVM_TOOLS_BINARY_DIR}/bin)
+    PATHS ${LLVM_TOOLS_BINARY_DIR} PATH_SUFFIXES bin NO_DEFAULT_PATH)
     if (NOT CLANG_EXECUTABLE)
         message(FATAL_ERROR "Failed to find clang" )
     endif()
     message(STATUS "CLANG_EXECUTABLE: ${CLANG_EXECUTABLE}")
 
 find_program(LLVM_DIS_EXECUTABLE NAMES llvm-dis
-    PATHS ${LLVM_TOOLS_BINARY_DIR}/bin)
+    PATHS ${LLVM_TOOLS_BINARY_DIR} PATH_SUFFIXES bin NO_DEFAULT_PATH)
     if (NOT LLVM_DIS_EXECUTABLE)
         message(FATAL_ERROR "Failed to find llvm-dis" )
     endif()
     message(STATUS "LLVM_DIS_EXECUTABLE: ${LLVM_DIS_EXECUTABLE}")
 
 find_program(LLVM_AS_EXECUTABLE NAMES llvm-as
-    PATHS ${LLVM_TOOLS_BINARY_DIR}/bin)
+    PATHS ${LLVM_TOOLS_BINARY_DIR} PATH_SUFFIXES bin NO_DEFAULT_PATH)
     if (NOT LLVM_AS_EXECUTABLE)
         message(FATAL_ERROR "Failed to find llvm-as" )
     endif()
     message(STATUS "LLVM_AS_EXECUTABLE: ${LLVM_AS_EXECUTABLE}")
+
+if (ISPC_INCLUDE_TESTS)
+    find_program(FILE_CHECK_EXECUTABLE NAMES FileCheck
+        PATHS ${LLVM_TOOLS_BINARY_DIR} PATH_SUFFIXES bin NO_DEFAULT_PATH)
+        if (NOT FILE_CHECK_EXECUTABLE)
+            message(FATAL_ERROR "Failed to find FileCheck" )
+        endif()
+        message(STATUS "FILE_CHECK_EXECUTABLE: ${FILE_CHECK_EXECUTABLE}")
+endif()
 
 function(str_to_list inStr outStr)
     string(REPLACE " " ";" tmpOutput "${inStr}")

@@ -28,7 +28,7 @@
    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.  
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 
@@ -41,9 +41,9 @@
 
 inline void printMatrix (DenseMatrix &M, const char *name) {
     printf("Matrix %s:\n", name);
-    for (int row = 0; row < M.rows(); row++) {
-        printf("row %2d: ", row + 1);
-        for (int col = 0; col < M.cols(); col++)
+    for (size_t row = 0; row < M.rows(); row++) {
+        printf("row %2d: ", (int)row + 1);
+        for (size_t col = 0; col < M.cols(); col++)
             printf("%6f ", M(row, col));
         printf("\n");
     }

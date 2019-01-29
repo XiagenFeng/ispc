@@ -1,6 +1,6 @@
 #!/usr/bin/python
 #
-#  Copyright (c) 2013-2018, Intel Corporation
+#  Copyright (c) 2013-2019, Intel Corporation
 #  All rights reserved.
 # 
 #  Redistribution and use in source and binary forms, with or without
@@ -138,13 +138,13 @@ def checkout_LLVM(component, use_git, version_LLVM, revision, target_dir, from_v
         SVN_PATH="trunk"
         GIT_BRANCH="master"
     elif  version_LLVM == "7_0":
-        SVN_PATH="branches/release_70"
+        SVN_PATH="tags/RELEASE_701/final"
         GIT_BRANCH="release_70"
     elif  version_LLVM == "6_0":
-        SVN_PATH="tags/RELEASE_600/final"
+        SVN_PATH="tags/RELEASE_601/final"
         GIT_BRANCH="release_60"
     elif  version_LLVM == "5_0":
-        SVN_PATH="tags/RELEASE_501/final"
+        SVN_PATH="tags/RELEASE_502/final"
         GIT_BRANCH="release_50"
     elif  version_LLVM == "4_0":
         SVN_PATH="tags/RELEASE_401/final"
@@ -319,11 +319,12 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
         os.chdir(LLVM_BUILD_selfbuild)
         if  version_LLVM not in LLVM_configure_capable:
             try_do_LLVM("configure release version for selfbuild ",
-                    "cmake -G Unix\ Makefiles" + " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" +
+                    "cmake -G " + "\"" + generator + "\"" + " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" +
                     "  -DCMAKE_INSTALL_PREFIX=" + llvm_home + "/" + LLVM_BIN_selfbuild +
                     "  -DCMAKE_BUILD_TYPE=Release" +
                     get_llvm_enable_dump_switch(version_LLVM) +
                     "  -DLLVM_ENABLE_ASSERTIONS=ON" +
+                    "  -DLLVM_INSTALL_UTILS=ON" +
                     (("  -DGCC_INSTALL_PREFIX=" + gcc_toolchain_path) if gcc_toolchain_path != "" else "") +
                     (("  -DCMAKE_C_COMPILER=" + gcc_toolchain_path+"/bin/gcc") if gcc_toolchain_path != "" else "") +
                     (("  -DCMAKE_CXX_COMPILER=" + gcc_toolchain_path+"/bin/g++") if gcc_toolchain_path != "" else "") +
@@ -356,12 +357,13 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
         if current_OS != "Windows":
             if  version_LLVM not in LLVM_configure_capable:
                 try_do_LLVM("configure release version ",
-                        "cmake -G Unix\ Makefiles" + " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" +
+                        "cmake -G " + "\"" + generator + "\"" + " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" +
                         selfbuild_compiler +
                         "  -DCMAKE_INSTALL_PREFIX=" + llvm_home + "/" + LLVM_BIN +
                         "  -DCMAKE_BUILD_TYPE=Release" +
                         get_llvm_enable_dump_switch(version_LLVM) +
                         "  -DLLVM_ENABLE_ASSERTIONS=ON" +
+                        "  -DLLVM_INSTALL_UTILS=ON" +
                         (("  -DGCC_INSTALL_PREFIX=" + gcc_toolchain_path) if gcc_toolchain_path != "" else "") +
                         (("  -DCMAKE_C_COMPILER=" + gcc_toolchain_path+"/bin/gcc") if gcc_toolchain_path != "" and selfbuild_compiler == "" else "") +
                         (("  -DCMAKE_CXX_COMPILER=" + gcc_toolchain_path+"/bin/g++") if gcc_toolchain_path != "" and selfbuild_compiler == "" else "") +
@@ -379,22 +381,24 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
                         from_validation)
         else:
             try_do_LLVM("configure release version ",
-                    'cmake -G "Visual Studio 14" -DCMAKE_INSTALL_PREFIX="..\\'+ LLVM_BIN + '" ' +
+                    'cmake -G ' + '\"' + generator + '\"' + ' -DCMAKE_INSTALL_PREFIX="..\\'+ LLVM_BIN + '" ' +
                     '  -DCMAKE_BUILD_TYPE=Release' +
                     get_llvm_enable_dump_switch(version_LLVM) +
                     '  -DLLVM_ENABLE_ASSERTIONS=ON' +
+                    '  -DLLVM_INSTALL_UTILS=ON' +
                     '  -DLLVM_TARGETS_TO_BUILD=X86' +
                     '  -DLLVM_LIT_TOOLS_DIR="C:\\gnuwin32\\bin" ..\\' + LLVM_SRC,
                     from_validation)
     else:
         if  version_LLVM not in LLVM_configure_capable:
             try_do_LLVM("configure debug version ",
-                    "cmake -G Unix\ Makefiles" + " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" +
+                    "cmake -G " + "\"" + generator + "\"" + " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" +
                     selfbuild_compiler +
                     "  -DCMAKE_INSTALL_PREFIX=" + llvm_home + "/" + LLVM_BIN +
                     "  -DCMAKE_BUILD_TYPE=Debug" +
                     get_llvm_enable_dump_switch(version_LLVM) +
                     "  -DLLVM_ENABLE_ASSERTIONS=ON" +
+                    "  -DLLVM_INSTALL_UTILS=ON" +
                     (("  -DGCC_INSTALL_PREFIX=" + gcc_toolchain_path) if gcc_toolchain_path != "" else "") +
                     (("  -DCMAKE_C_COMPILER=" + gcc_toolchain_path+"/bin/gcc") if gcc_toolchain_path != "" and selfbuild_compiler == "" else "") +
                     (("  -DCMAKE_CXX_COMPILER=" + gcc_toolchain_path+"/bin/g++") if gcc_toolchain_path != "" and selfbuild_compiler == "" else "") +
@@ -425,20 +429,22 @@ def unsupported_llvm_targets(LLVM_VERSION):
                        "3.4":["avx512knl-i32x16", "avx512skx-i32x16"],
                        "3.5":["avx512knl-i32x16", "avx512skx-i32x16"],
                        "3.6":["avx512knl-i32x16", "avx512skx-i32x16"],
-                       "3.7":["avx512skx-i32x16"],
-                       "3.8":[],
-                       "3.9":[],
-                       "4.0":[],
-                       "5.0":[],
-                       "trunk":[]}   
-    return prohibited_list[LLVM_VERSION]
+                       "3.7":["avx512skx-i32x16"]}
+    if LLVM_VERSION in prohibited_list:
+        return prohibited_list[LLVM_VERSION]
+    return []
 
 
+# Split targets into categories: native, generic, knc, sde.
+# native - native targets run natively on current hardware.
+# generic - hardware agnostic generic target.
+# knc - knc target. This one is special, as it requires additional steps to run.
+# sde - native target, which need to be emulated on current hardware.
 def check_targets():
-    answer = []
-    answer_generic = []
-    answer_knc = []
-    answer_sde = []
+    result = []
+    result_generic = []
+    result_knc = []
+    result_sde = []
     # check what native targets do we have
     if current_OS != "Windows":
         if options.ispc_build_compiler == "clang":
@@ -450,70 +456,91 @@ def check_targets():
     else:
         try_do_LLVM("build check_ISA", "cl check_isa.cpp", True)
 
-    SSE2  = ["sse2-i32x4",  "sse2-i32x8"]
-    SSE4  = ["sse4-i32x4",  "sse4-i32x8",   "sse4-i16x8", "sse4-i8x16"]
-    AVX   = ["avx1-i32x4",  "avx1-i32x8",  "avx1-i32x16",  "avx1-i64x4"]
-    AVX11 = ["avx1.1-i32x8","avx1.1-i32x16","avx1.1-i64x4"]
-    AVX2  = ["avx2-i32x8",  "avx2-i32x16",  "avx2-i64x4"]
-    KNL   = ["knl-generic", "avx512knl-i32x16"]
-    SKX   = ["avx512skx-i32x16"]
+    # Dictionary mapping hardware architecture to its targets.
+    # The value in the dictionary is:
+    # [
+    #   list of targets corresponding to this architecture,
+    #   list of other architecture executable on this hardware,
+    #   flag for sde to emulate this platform,
+    #   flag is this is supported on current platform
+    # ]
+    target_dict = {
+      "SSE2":   [["sse2-i32x4",  "sse2-i32x8"],
+                 ["SSE2"], "-p4", False],
+      "SSE4":   [["sse4-i32x4",  "sse4-i32x8",   "sse4-i16x8", "sse4-i8x16"],
+                 ["SSE2", "SSE4"], "-wsm", False],
+      "AVX":    [["avx1-i32x4",  "avx1-i32x8",  "avx1-i32x16",  "avx1-i64x4"],
+                 ["SSE2", "SSE4", "AVX"], "-snb", False],
+      "AVX1.1": [["avx1.1-i32x8","avx1.1-i32x16","avx1.1-i64x4"],
+                 ["SSE2", "SSE4", "AVX", "AVX1.1"], "-ivb", False],
+      "AVX2":   [["avx2-i32x8",  "avx2-i32x16",  "avx2-i64x4"],
+                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2"], "-hsw", False],
+      "KNL":    [["avx512knl-i32x16"],
+                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2", "KNL"], "-knl", False],
+      "SKX":    [["avx512skx-i32x16"],
+                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2", "SKX"], "-skx", False]
+    }
 
-    targets = [["AVX2", AVX2, False], ["AVX1.1", AVX11, False], ["AVX", AVX, False], ["SSE4", SSE4, False], 
-               ["SSE2", SSE2, False], ["KNL", KNL, False], ["SKX", SKX, False]]
-    f_lines = take_lines("check_isa.exe", "first")
-    for i in range(0,5):
-        if targets[i][0] in f_lines:
-            for j in range(i,5):
-                answer = targets[j][1] + answer
-                targets[j][2] = True
-            break
+    hw_arch = take_lines("check_isa.exe", "first").split()[1]
+
+    if not (hw_arch in target_dict):
+        error("Architecture " + hw_arch + " was not recognized", 1)
+
+    # Mark all compatible architecutres in the dictionary.
+    for compatible_arch in target_dict[hw_arch][1]:
+        target_dict[compatible_arch][3] = True
+
+    # Now initialize result and result_sde.
+    for key in target_dict:
+        item = target_dict[key]
+        targets = item[0]
+        if item[3]:
+            # Supported natively
+            result = result + targets
+        else:
+            # Supported through SDE
+            for target in targets:
+                result_sde = result_sde + [[item[2], target]]
+
     # generate targets for KNC
     if  current_OS == "Linux":
-        answer_knc = ["knc-generic"]
+        result_knc = ["knc-generic"]
 
     if current_OS != "Windows":
-        answer_generic = ["generic-4", "generic-16", "generic-8", "generic-1", "generic-32", "generic-64"]
+        result_generic = ["generic-4", "generic-16", "generic-8", "generic-1", "generic-32", "generic-64"]
+
     # now check what targets we have with the help of SDE
     sde_exists = get_sde()
     if sde_exists == "":
         error("you haven't got sde neither in SDE_HOME nor in your PATH.\n" + 
             "To test all platforms please set SDE_HOME to path containing SDE.\n" +
             "Please refer to http://www.intel.com/software/sde for SDE download information.", 2)
-        return [answer, answer_generic, answer_sde, answer_knc]
-    # here we have SDE
-    f_lines = take_lines(sde_exists + " -help", "all")
-    for i in range(0,len(f_lines)):
-        if targets[6][2] == False and "skx" in f_lines[i]:
-            answer_sde = answer_sde + [["-skx", "avx512skx-i32x16"]]
-        if targets[5][2] == False and "knl" in f_lines[i]:
-            answer_sde = answer_sde + [["-knl", "knl-generic"], ["-knl", "avx512knl-i32x16"]]
-        if targets[3][2] == False and "wsm" in f_lines[i]:
-            answer_sde = answer_sde + [["-wsm", "sse4-i32x4"], ["-wsm", "sse4-i32x8"], ["-wsm", "sse4-i16x8"], ["-wsm", "sse4-i8x16"]]
-        if targets[2][2] == False and "snb" in f_lines[i]:
-            answer_sde = answer_sde + [["-snb", "avx1-i32x4"], ["-snb", "avx1-i32x8"], ["-snb", "avx1-i32x16"], ["-snb", "avx1-i64x4"]]
-        if targets[1][2] == False and "ivb" in f_lines[i]:
-            answer_sde = answer_sde + [["-ivb", "avx1.1-i32x8"], ["-ivb", "avx1.1-i32x16"], ["-ivb", "avx1.1-i64x4"]]
-        if targets[0][2] == False and "hsw" in f_lines[i]:
-            answer_sde = answer_sde + [["-hsw", "avx2-i32x8"], ["-hsw", "avx2-i32x16"], ["-hsw", "avx2-i64x4"]]
-    return [answer, answer_generic, answer_sde, answer_knc]
+
+    return [result, result_generic, result_sde, result_knc]
 
 def build_ispc(version_LLVM, make):
     current_path = os.getcwd()
-    os.chdir(os.environ["ISPC_HOME"])
+    ispc_home = os.environ["ISPC_HOME"]
+    os.chdir(ispc_home)
 
     make_ispc = "make " + options.ispc_build_compiler + " -j" + options.speed
+    ISPC_BUILD="build-" + version_LLVM
+    ISPC_BIN="bin-" + version_LLVM
+    if not os.path.exists(ISPC_BUILD):
+        os.makedirs(ISPC_BUILD)
+    if not os.path.exists(ISPC_BUILD):
+        os.makedirs(ISPC_BIN)
+    os.chdir(ISPC_BUILD)
 
     if current_OS != "Windows":
         p_temp = os.getenv("PATH")
         os.environ["PATH"] = os.environ["LLVM_HOME"] + "/bin-" + version_LLVM + "/bin:" + os.environ["PATH"]
-        try_do_LLVM("clean ISPC for building", "make clean", True)
-        
-        folder = os.environ["LLVM_HOME"]  + os.sep + "llvm-" 
+
+        folder = os.environ["LLVM_HOME"]  + os.sep + "llvm-"
         if options.folder == "":
             folder += version_LLVM
         if options.debug == True:
             folder +=  "dbg"
-      
 
         llvm_rev = ""
         # determine LLVM revision
@@ -524,7 +551,7 @@ def build_ispc(version_LLVM, make):
         for i in info_llvm:
             if len(i) > 0 and i.startswith("Last Changed Rev: "):
                 llvm_rev = str(i[len("Last Changed Rev: "):])
-        
+
         if llvm_rev != "":
             common.ex_state.switch_revision(llvm_rev)
             print_debug("\nBuilding ISPC with LLVM %s (%s):\n" \
@@ -534,43 +561,22 @@ def build_ispc(version_LLVM, make):
             raise
 
         try_do_LLVM("recognize LLVM revision", "svn info " + folder, True)
+        try_do_LLVM("configure ispc build", 'cmake -DCMAKE_INSTALL_PREFIX="..\\'+ ISPC_BIN + '" ' +
+                    '  -DCMAKE_BUILD_TYPE=Release' +
+                        ispc_home, True)
         try_do_LLVM("build ISPC with LLVM version " + version_LLVM + " ", make_ispc, True)
+        try_do_LLVM("install ISPC ", "make install", True)
+        copyfile(os.path.join(ispc_home, ISPC_BIN, "bin", "ispc"), os.path.join(ispc_home, + "ispc"))
         os.environ["PATH"] = p_temp
     else:
-        p_temp = os.getenv("LLVM_INSTALL_DIR")
-        v_temp = os.getenv("LLVM_VERSION")
-        os.environ["LLVM_INSTALL_DIR"] = os.environ["LLVM_HOME"] + "\\bin-" + version_LLVM
-        if version_LLVM == "3.2":
-            temp = "3_2"
-        if version_LLVM == "3.3":
-            temp = "3_3"
-        if version_LLVM == "3.4":
-            temp = "3_4"
-        if version_LLVM == "3.5":
-            temp = "3_5"
-        if version_LLVM == "3.6":
-            temp = "3_6"
-        if version_LLVM == "3.7":
-            temp = "3_7"
-        if version_LLVM == "3.8":
-            temp = "3_8"
-        if version_LLVM == "3.9":
-            temp = "3_9"
-        if version_LLVM == "4.0":
-            temp = "4_0"
-        if version_LLVM == "5.0":
-            temp = "5_0"
-        if version_LLVM == "6.0":
-            temp = "6_0"
-        if version_LLVM == "7.0":
-            temp = "7_0"
-        if version_LLVM == "trunk":
-            temp = "8_0"
-        os.environ["LLVM_VERSION"] = "LLVM_" + temp
+        try_do_LLVM("configure ispc build", 'cmake -G ' + '\"' + generator + '\"' + ' -DCMAKE_INSTALL_PREFIX="..\\'+ ISPC_BIN + '" ' +
+                    '  -DCMAKE_BUILD_TYPE=Release ' +
+                        ispc_home, True)
         try_do_LLVM("clean ISPC for building", "msbuild ispc.vcxproj /t:clean", True)
         try_do_LLVM("build ISPC with LLVM version " + version_LLVM + " ", "msbuild ispc.vcxproj /V:m /p:Platform=Win32 /p:Configuration=Release /t:rebuild", True)
-        os.environ["LLVM_INSTALL_DIR"] = p_temp
-        os.environ["LLVM_VERSION"] = v_temp
+        try_do_LLVM("install ISPC  ", "msbuild INSTALL.vcxproj /p:Platform=Win32 /p:Configuration=Release", True)
+        copyfile(os.path.join(ispc_home, ISPC_BIN, "bin", "ispc.exe"), os.path.join(ispc_home, + "ispc.exe"))
+
     os.chdir(current_path)
 
 def execute_stability(stability, R, print_version):
@@ -790,7 +796,7 @@ def validation_run(only, only_targets, reference_branch, number, notify, update,
                 if options.ispc_build_compiler == "gcc":
                     stability.compiler_exe = "g++"
                 # but 'knc/knl' generic target is supported only by icpc, so set explicitly
-                if ("knc-generic" in stability.target) or ("knl-generic" in stability.target):
+                if ("knc-generic" in stability.target):
                     stability.compiler_exe = "icpc"
                 # now set archs for targets
                 if ("generic" in stability.target):
@@ -823,7 +829,7 @@ def validation_run(only, only_targets, reference_branch, number, notify, update,
                 # sometimes clang++ is not avaluable. if --ispc-build-compiler = gcc we will pass in g++ compiler
                 if options.ispc_build_compiler == "gcc":
                     stability.compiler_exe = "g++"
-                if ("knc-generic" in stability.target) or ("knl-generic" in stability.target):
+                if ("knc-generic" in stability.target):
                     stability.compiler_exe = "icpc"
                 stability.wrapexe = get_sde() + " " + sde_targets[j][0] + " -- "
                 if ("generic" in stability.target):
@@ -897,8 +903,8 @@ def validation_run(only, only_targets, reference_branch, number, notify, update,
             if current_OS != "Windows":
                 os.rename("ispc", "ispc_ref")
             else:
-                common.remove_if_exists("Release\\ispc_ref.exe")
-                os.rename("Release\\ispc.exe", "Release\\ispc_ref.exe")
+                common.remove_if_exists("ispc_ref.exe")
+                os.rename("ispc.exe", "ispc_ref.exe")
             try_do_LLVM("checkout test branch " + current_branch + " ", "git checkout " + current_branch, True)
             if stashing:
                 try_do_LLVM("return current branch ", "git stash pop", True)
@@ -964,7 +970,6 @@ def Main():
             current_OS = "MacOS"
         else:
             current_OS = "Linux" 
-
     if (options.build_llvm == False and options.validation_run == False):
         parser.print_help()
         exit(0)
@@ -1019,7 +1024,14 @@ def Main():
             options.branch = "trunk"
     if options.use_git and options.revision != "":
         error("--revision is not supported with --git", 1)
-
+    global generator
+    if options.generator:
+        generator = options.generator
+    else:
+        if current_OS == "Windows":
+            generator = "Visual Studio 14"
+        else:
+            generator = "Unix Makefiles"
     try:
         start_time = time.time()
         if options.build_llvm:
@@ -1058,6 +1070,7 @@ import copy
 import multiprocessing
 import subprocess
 import re
+from shutil import copyfile
 from email.MIMEMultipart import MIMEMultipart
 from email.MIMEBase import MIMEBase
 from email.mime.text import MIMEText
@@ -1088,7 +1101,7 @@ if __name__ == '__main__':
     "Performance validation run with 10 runs of each test and comparing to branch 'old'\n\talloy.py -r --only=performance --compare-with=old --number=10\n" +
     "Validation run. Update fail_db.txt with new fails, send results to my@my.com\n\talloy.py -r --update-errors=F --notify='my@my.com'\n" +
     "Test KNC target (not tested when tested all supported targets, so should be set explicitly via --only-targets)\n\talloy.py -r --only='stability' --only-targets='knc-generic'\n" +
-    "Test KNL target (requires sde)\n\talloy.py -r --only='stability' --only-targets='knl-generic avx512knl-i32x16'\n")
+    "Test KNL target (requires sde)\n\talloy.py -r --only='stability' --only-targets='avx512knl-i32x16'\n")
 
     num_threads="%s" % multiprocessing.cpu_count()
     parser = MyParser(usage="Usage: alloy.py -r/-b [options]", epilog=examples)
@@ -1141,7 +1154,7 @@ if __name__ == '__main__':
         help='rewrite fail_db.txt file according to received results (F or FP)', default="")
     run_group.add_option('--only-targets', dest='only_targets',
         help='set list of targets to test. Possible values - all subnames of targets, plus "knc-generic" for "generic" ' +
-             'version of knc support, "knl-generic" or "avx512knl-i32x16" for "generic"/"native" knl support', default="")
+             'version of knc support', default="")
     run_group.add_option('--time', dest='time',
         help='display time of testing', default=False, action='store_true')
     run_group.add_option('--only', dest='only',
@@ -1152,6 +1165,8 @@ if __name__ == '__main__':
             default="")
     run_group.add_option('--perf_LLVM', dest='perf_llvm',
         help='compare LLVM 3.6 with "--compare-with", default trunk', default=False, action='store_true')
+    run_group.add_option('--generator', dest='generator',
+        help='specify cmake generator', default="")
     parser.add_option_group(run_group)
     # options for activity "setup PATHS"
     setup_group = OptionGroup(parser, "Options for setup",

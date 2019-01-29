@@ -28,7 +28,7 @@
    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.  
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #ifdef _MSC_VER
@@ -60,7 +60,7 @@ writePPM(int *buf, int width, int height, const char *fn) {
     for (int i = 0; i < width*height; ++i) {
         // Map the iteration count to colors by just alternating between
         // two greys.
-        char c = (buf[i] & 0x1) ? 240 : 20;
+        char c = (buf[i] & 0x1) ? (char)240 : 20;
         for (int j = 0; j < 3; ++j)
             fputc(c, fp);
     }
@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
     writePPM(buf, width, height, "mandelbrot-ispc.ppm");
 
 
-    // 
+    //
     // And run the serial implementation 3 times, again reporting the
     // minimum time.
     //

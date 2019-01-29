@@ -28,10 +28,13 @@
    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.  
+   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 /**************************************************************\
 | Includes
 \**************************************************************/
@@ -45,13 +48,13 @@ extern "C" {
 /**************************************************************\
 | DenseMatrix methods
 \**************************************************************/
-void DenseMatrix::multiply (const Vector &v, Vector &r) const 
+void DenseMatrix::multiply (const Vector &v, Vector &r) const
 {
     // Dimensionality check
     ASSERT(v.size() == cols());
     ASSERT(r.size() == rows());
 
-    for (int i = 0; i < rows(); i++)
+    for (size_t i = 0; i < rows(); i++)
         r[i] = v.dot(entries + i * num_cols);
 }
 
@@ -64,7 +67,7 @@ void DenseMatrix::row (size_t row, Vector &r) {
     r._size   = cols();
 }
 
-void DenseMatrix::set_row(size_t row, const Vector &v) 
+void DenseMatrix::set_row(size_t row, const Vector &v)
 {
     ASSERT(v.size() == num_cols);
     memcpy(entries + row * num_cols, v.entries, num_cols * sizeof(double));
@@ -103,13 +106,13 @@ CRSMatrix *CRSMatrix::matrix_from_mtf (char *path) {
 
     int m, n, nz;
 
-    if ((f = fopen(path, "r")) == NULL) 
+    if ((f = fopen(path, "r")) == NULL)
         ERR_OUT("Error: %s does not name a valid/readable file.\n", path);
 
     if (mm_read_banner(f, &matcode) != 0)
         ERR_OUT("Error: Could not process Matrix Market banner.\n");
 
-    if (mm_is_complex(matcode)) 
+    if (mm_is_complex(matcode))
         ERR_OUT("Error: Application does not support complex numbers.\n")
 
     if (mm_is_dense(matcode))
@@ -154,13 +157,13 @@ Vector *Vector::vector_from_mtf (char *path) {
 
     int m, n, nz;
 
-    if ((f = fopen(path, "r")) == NULL) 
+    if ((f = fopen(path, "r")) == NULL)
         ERR_OUT("Error: %s does not name a valid/readable file.\n", path);
 
     if (mm_read_banner(f, &matcode) != 0)
         ERR_OUT("Error: Could not process Matrix Market banner.\n");
 
-    if (mm_is_complex(matcode)) 
+    if (mm_is_complex(matcode))
         ERR_OUT("Error: Application does not support complex numbers.\n")
 
     if (mm_is_dense(matcode)) {
@@ -212,7 +215,7 @@ void Vector::to_mtf (char *path) {
 
     mm_write_banner(f, matcode);
     mm_write_mtx_array_size(f, size(), 1);
-    for (int i = 0; i < size(); i++)
+    for (size_t i = 0; i < size(); i++)
         fprintf(f, "%lg\n", entries[i]);
 
     fclose(f);
@@ -223,7 +226,7 @@ void CRSMatrix::multiply (const Vector &v, Vector &r) const
     ASSERT(v.size() == cols());
     ASSERT(r.size() == rows());
 
-    for (int row = 0; row < rows(); row++) 
+    for (size_t row = 0; row < rows(); row++)
     {
         int row_offset = row_offsets[row];
         int next_offset = ((row + 1 == rows()) ? _nonzeroes : row_offsets[row + 1]);
@@ -237,7 +240,7 @@ void CRSMatrix::multiply (const Vector &v, Vector &r) const
     }
 }
 
-void CRSMatrix::zero ( ) 
+void CRSMatrix::zero ( )
 {
     entries.clear();
     row_offsets.clear();

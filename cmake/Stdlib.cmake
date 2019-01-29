@@ -39,7 +39,7 @@ function(create_stdlib mask outputPath)
         OUTPUT ${output}
         COMMAND ${CLANG_EXECUTABLE} -E -x c -DISPC_MASK_BITS=${mask} -DISPC=1 -DPI=3.14159265358979
             ${CMAKE_CURRENT_SOURCE_DIR}/stdlib.ispc
-            | ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/stdlib2cpp.py mask${mask}
+            | \"${PYTHON_EXECUTABLE}\" ${CMAKE_CURRENT_SOURCE_DIR}/stdlib2cpp.py mask${mask}
             > ${output}
         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/stdlib.ispc
     )
@@ -51,6 +51,10 @@ function(generate_stdlib resultList)
     foreach (m ${ARGN})
         create_stdlib(${m} outputPath)
         list(APPEND tmpList "${outputPath}")
+        if(MSVC)
+            # Group generated files inside Visual Studio
+            source_group("Generated Stdlib" FILES ${outputPath})
+        endif()
     endforeach()
     set(${resultList} ${tmpList} PARENT_SCOPE)
 endfunction()
