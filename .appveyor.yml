@@ -1,4 +1,4 @@
-#  Copyright (c) 2018, Intel Corporation
+#  Copyright (c) 2018-2019, Intel Corporation
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -38,9 +38,6 @@ environment:
   LLVM_HOME: "c:\\projects\\llvm"
   CHOCO_DIR: "%ProgramData%\\chocolatey"
   matrix:
-    - DESC: "Build ispc with LLVM 4.0 VS2017"
-      LLVM_VERSION: 4.0
-      DOCKER_NAME: "ispc/test_repo:win_llvm40"
     - DESC: "Build ispc with LLVM 5.0 VS2017"
       LLVM_VERSION: 5.0
       DOCKER_NAME: "ispc/test_repo:win_llvm50"
@@ -50,6 +47,9 @@ environment:
     - DESC: "Build ispc with LLVM 7.0 VS2017"
       LLVM_VERSION: 7.0
       DOCKER_NAME: "ispc/test_repo:win_llvm70"
+    - DESC: "Build ispc with LLVM 7.0 VS2017"
+      LLVM_VERSION: 8.0
+      DOCKER_NAME: "ispc/test_repo:win_llvm80"
 
 cache:
   - C:\ProgramData\chocolatey\bin -> appveyor.yml
@@ -79,7 +79,7 @@ init:
 
 before_build:
 - cmd: |-
-    set PATH=%LLVM_HOME%\bin;%CHOCO_DIR%\lib\winflexbison\tools;C:\cygwin64\bin;%PATH%
+    set PATH=%LLVM_HOME%\bin;C:\Python27\;C:\Python27\Scripts;%CHOCO_DIR%\lib\winflexbison\tools;C:\cygwin64\bin;%PATH%
     cd %ISPC_HOME% && mkdir build && cd build
     cmake .. -G %generator% -DCMAKE_INSTALL_PREFIX=%ISPC_HOME%\%configuration% -DISPC_PREPARE_PACKAGE=ON
 
@@ -91,6 +91,7 @@ after_build:
   - call "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\VC\Auxiliary\Build\vcvars32.bat"
 
 test_script:
+  - msbuild c:\\projects\\ispc\\build\\tests\\check-all.vcxproj /t:Build
   - set PATH=%ISPC_HOME%\build\bin\%configuration%;%PATH%
   - cd %ISPC_HOME%
   - check_isa.exe

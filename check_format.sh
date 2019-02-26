@@ -1,5 +1,6 @@
-#
-#  Copyright (c) 2018, Intel Corporation
+#!/bin/bash
+# ##################################################
+#  Copyright (c) 2019, Intel Corporation
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -29,32 +30,33 @@
 #   LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 #   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 #   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+EXIT_CODE=0
+echo "\
+############################################################################
+Checking formatting of modified files. It is expected that the files were
+formatted with clang-format 8.0.0. It is also expected that clang-format
+version 8.0.0 is used for the check. Otherwise the result can ne unexpected.
+############################################################################"
 
-#
-# ispc Stdlib.cmake
-#
-function(create_stdlib mask outputPath)
-    set(output ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/stdlib_mask${mask}_ispc.cpp)
-    add_custom_command(
-        OUTPUT ${output}
-        COMMAND ${CLANG_EXECUTABLE} -E -x c -DISPC_MASK_BITS=${mask} -DISPC=1 -DPI=3.14159265358979
-            stdlib.ispc | \"${PYTHON_EXECUTABLE}\" stdlib2cpp.py mask${mask}
-            > ${output}
-        DEPENDS stdlib.ispc
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-    set(${outputPath} ${output} PARENT_SCOPE)
-    set_source_files_properties(${outputPath} PROPERTIES GENERATED true)
-endfunction()
+CLANG_FORMAT="clang-format"
+REQUIRED_VERSION="8.0.0"
+VERSION_STRING="$CLANG_FORMAT version $REQUIRED_VERSION .*"
+CURRENT_VERSION="$(clang-format --version)"
+if ! [[ $CURRENT_VERSION =~ $VERSION_STRING ]] ; then
+    echo WARNING: $CLANG_FORMAT version $REQUIRED_VERSION is required but $CURRENT_VERSION is used.
+    echo The results can be unexpected.
+fi
 
-function(generate_stdlib resultList)
-    foreach (m ${ARGN})
-        create_stdlib(${m} outputPath)
-        list(APPEND tmpList "${outputPath}")
-        if(MSVC)
-            # Group generated files inside Visual Studio
-            source_group("Generated Stdlib" FILES ${outputPath})
-        endif()
-    endforeach()
-    set(${resultList} ${tmpList} PARENT_SCOPE)
-endfunction()
+LAST_REVISION=`git rev-parse HEAD`
+CHANGED_FILES=`git diff-tree --no-commit-id --name-only -r $LAST_REVISION | grep -E "\.(cpp|h|c)$"`
+for FILE in $CHANGED_FILES; do
+    $CLANG_FORMAT $FILE | cmp  $FILE >/dev/null
+    if [ $? -ne 0 ]; then
+        echo "[!] INCORRECT FORMATTING! $FILE" >&2
+            EXIT_CODE=1
+        fi
+    done
+if [ $EXIT_CODE -eq 0 ]; then 
+    echo "No formatting issues found"
+fi
+exit $EXIT_CODE

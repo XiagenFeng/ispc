@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2018, Intel Corporation
+#  Copyright (c) 2018-2019, Intel Corporation
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -86,35 +86,31 @@ find_package(PythonInterp 2.7 REQUIRED)
 
 find_package(BISON 2.4 REQUIRED)
     if (BISON_FOUND)
-        set(BISON_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/parse.yy)
+        set(BISON_INPUT src/parse.yy)
         set(BISON_CPP_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.cc)
         set(BISON_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.hh
                          ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.output)
-        if (WIN32)
-            win_path_to_cygwin(${BISON_INPUT} ${BISON_EXECUTABLE} BISON_INPUT)
-        endif()
         add_custom_command (
             OUTPUT ${BISON_CPP_OUTPUT} ${BISON_OUTPUT}
             COMMAND ${BISON_EXECUTABLE} -d -t -v
                 --output=${BISON_CPP_OUTPUT}
                 ${BISON_INPUT}
             COMMENT "Generating parse.cc"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
     endif()
 
 find_package(FLEX 2.5 REQUIRED)
     if (FLEX_FOUND)
-        set(FLEX_INPUT  ${CMAKE_CURRENT_SOURCE_DIR}/src/lex.ll)
+        set(FLEX_INPUT  src/lex.ll)
         set(FLEX_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/lex.cpp)
-        if (WIN32)
-            win_path_to_cygwin(${FLEX_INPUT} ${FLEX_EXECUTABLE} FLEX_INPUT)
-        endif()
         add_custom_command(
             OUTPUT ${FLEX_OUTPUT}
             COMMAND ${FLEX_EXECUTABLE}
                 --outfile=${FLEX_OUTPUT}
                 ${FLEX_INPUT}
             COMMENT "Generating lex.cpp"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
     endif()
 
@@ -296,14 +292,14 @@ if (ISPC_INCLUDE_EXAMPLES AND NOT ISPC_PREPARE_PACKAGE)
     add_subdirectory(examples)
 endif()
 
-if (ISPC_INCLUDE_TESTS AND NOT ISPC_PREPARE_PACKAGE)
+if (ISPC_INCLUDE_TESTS)
     add_subdirectory(tests)
 endif()
 
 # Install
 install (TARGETS ${PROJECT_NAME} DESTINATION bin)
 if (ISPC_PREPARE_PACKAGE)
-    install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION examples)
+    install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION examples PATTERN "portable" EXCLUDE)
     install (DIRECTORY "${PROJECT_SOURCE_DIR}/contrib/" DESTINATION contrib)
     install (FILES "${PROJECT_SOURCE_DIR}/LICENSE.txt" DESTINATION .)
     install (FILES "${PROJECT_SOURCE_DIR}/docs/ReleaseNotes.txt" DESTINATION .)
@@ -328,8 +324,14 @@ if (ISPC_PREPARE_PACKAGE)
     # CPack configuration
     if (WIN32)
         set(CPACK_GENERATOR "ZIP")
+        set(ISPC_SYSTEM_NAME "windows")
     else()
         set(CPACK_GENERATOR "TGZ")
+        if (APPLE)
+            set(ISPC_SYSTEM_NAME "macOS")
+        else()
+            set(ISPC_SYSTEM_NAME "linux")
+        endif()
     endif()
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
     # Get ispc version
@@ -338,5 +340,10 @@ if (ISPC_PREPARE_PACKAGE)
     set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
     set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
     set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_MATCH_3})
+    string(CONCAT CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}"
+                             "-v${CPACK_PACKAGE_VERSION_MAJOR}"
+                             ".${CPACK_PACKAGE_VERSION_MINOR}"
+                             ".${CPACK_PACKAGE_VERSION_PATCH}"
+                             "-${ISPC_SYSTEM_NAME}")
     include(CPack)
 endif()
