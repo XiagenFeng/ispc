@@ -909,6 +909,7 @@ llvm::raw_ostream &CWriter::printSimpleType(llvm::raw_ostream &Out, llvm::Type *
 #endif
         llvm_unreachable(0);
     }
+    return Out << "";
 }
 
 // Pass the Type* and the variable name and this prints out the variable
@@ -998,7 +999,7 @@ llvm::raw_ostream &CWriter::printType(llvm::raw_ostream &Out, llvm::Type *Ty, bo
             for (llvm::StructType::element_iterator I = STy->element_begin(), E = STy->element_end(); I != E;
                  ++I, ++Idx) {
                 char buf[64];
-                sprintf(buf, "v%d", Idx);
+                snprintf(buf, sizeof(buf), "v%d", Idx);
                 printType(Out, *I, false, buf);
                 if (Idx + 1 < STy->getNumElements())
                     Out << ", ";
@@ -1053,7 +1054,7 @@ llvm::raw_ostream &CWriter::printType(llvm::raw_ostream &Out, llvm::Type *Ty, bo
         Out << "  static " << NameSoFar << " init(";
         for (unsigned Idx = 0; Idx < NumElements; ++Idx) {
             char buf[64];
-            sprintf(buf, "v%d", Idx);
+            snprintf(buf, sizeof(buf), "v%d", Idx);
             printType(Out, ATy->getElementType(), false, buf);
             if (Idx + 1 < NumElements)
                 Out << ", ";
@@ -1082,6 +1083,7 @@ llvm::raw_ostream &CWriter::printType(llvm::raw_ostream &Out, llvm::Type *Ty, bo
     default:
         llvm_unreachable("Unhandled case in getTypeProps!");
     }
+    return Out << "";
 }
 
 void CWriter::printConstantArray(llvm::ConstantArray *CPA, bool Static) {
@@ -1235,7 +1237,7 @@ static bool isFPCSafeToPrint(const llvm::ConstantFP *CFP) {
 #endif
 #if HAVE_PRINTF_A && ENABLE_CBE_PRINTF_A
     char Buffer[100];
-    sprintf(Buffer, "%a", APF.convertToDouble());
+    snprintf(Buffer, sizeof(Buffer), "%a", APF.convertToDouble());
     if (!strncmp(Buffer, "0x", 2) || !strncmp(Buffer, "-0x", 3) || !strncmp(Buffer, "+0x", 3))
         return APF.bitwiseIsEqual(llvm::APFloat(atof(Buffer)));
     return false;
@@ -1769,7 +1771,7 @@ void CWriter::printConstant(llvm::Constant *CPV, bool Static) {
                 char Buffer[100];
 
                 uint64_t ll = llvm::DoubleToBits(V);
-                sprintf(Buffer, "0x%" PRIx64, ll);
+                snprintf(Buffer, sizeof(Buffer), "0x%" PRIx64, ll);
 
                 std::string Num(&Buffer[0], &Buffer[6]);
                 unsigned long Val = strtoul(Num.c_str(), 0, 16);
@@ -1789,7 +1791,7 @@ void CWriter::printConstant(llvm::Constant *CPV, bool Static) {
 #if HAVE_PRINTF_A && ENABLE_CBE_PRINTF_A
                 // Print out the constant as a floating point number.
                 char Buffer[100];
-                sprintf(Buffer, "%a", V);
+                snprintf(Buffer, sizeof(Buffer), "%a", V);
                 Num = Buffer;
 #else
                 Num = ftostr(FPC->getValueAPF());
@@ -2104,7 +2106,7 @@ std::string CWriter::GetValueName(const llvm::Value *Operand) {
 
         if (!((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_')) {
             char buffer[5];
-            sprintf(buffer, "_%x_", ch);
+            snprintf(buffer, sizeof(buffer), "_%x_", ch);
             VarName += buffer;
         } else
             VarName += ch;
@@ -2485,7 +2487,12 @@ bool CWriter::doInitialization(llvm::Module &M) {
 
     TD = new llvm::DataLayout(&M);
     IL = new llvm::IntrinsicLowering(*TD);
+    // AddPrototypes was removed from LLVM 9.0.
+    // It looks like that usage of this method does not affect ISPC functionality
+    // so it is safe to just remove it for LLVM 9.0+ versions.
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_8_0
     IL->AddPrototypes(M);
+#endif
 
 #if 0
   std::string Triple = TheModule->getTargetTriple();
@@ -4189,7 +4196,7 @@ void CWriter::visitSelectInst(llvm::SelectInst &I) {
 // Returns the macro name or value of the max or min of an integer type
 // (as defined in limits.h).
 static void printLimitValue(llvm::IntegerType &Ty, bool isSigned, bool isMax, llvm::raw_ostream &Out) {
-    const char *type;
+    const char *type = "";
     const char *sprefix = "";
 
     unsigned NumBits = Ty.getBitWidth();
@@ -5297,6 +5304,7 @@ llvm::Value *SmearCleanupPass::getShuffleSmearValue(llvm::Instruction *inst) con
         if (extractFunc == NULL) {
             // Declare the __extract_element function if needed; it takes a vector and
             // a scalar parameter and returns a scalar of the vector parameter type.
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_8_0
             llvm::Constant *ef =
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
                 module->getOrInsertFunction(
@@ -5308,6 +5316,12 @@ llvm::Value *SmearCleanupPass::getShuffleSmearValue(llvm::Instruction *inst) con
                     shuffleInst->getOperand(0)->getType(), llvm::IntegerType::get(module->getContext(), 32));
 #endif
             extractFunc = llvm::dyn_cast<llvm::Function>(ef);
+#else // LLVM 9.0+
+            llvm::FunctionCallee ef = module->getOrInsertFunction(
+                "__extract_element", shuffleInst->getOperand(0)->getType()->getVectorElementType(),
+                shuffleInst->getOperand(0)->getType(), llvm::IntegerType::get(module->getContext(), 32));
+            extractFunc = llvm::dyn_cast<llvm::Function>(ef.getCallee());
+#endif
             assert(extractFunc != NULL);
             extractFunc->setDoesNotThrow();
             extractFunc->setOnlyReadsMemory();
@@ -5352,13 +5366,18 @@ restart:
                 // Declare the smear function if needed; it takes a single
                 // scalar parameter and returns a vector of the same
                 // parameter type.
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_8_0
                 llvm::Constant *sf =
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
                     module->getOrInsertFunction(smearFuncName, iter->getType(), smearType, NULL);
-#else // LLVM 5.0+
+#else  // LLVM 5.0+
                     module->getOrInsertFunction(smearFuncName, iter->getType(), smearType);
-#endif
+#endif // LLVM 9.0+
                 smearFunc = llvm::dyn_cast<llvm::Function>(sf);
+#else
+                llvm::FunctionCallee sf = module->getOrInsertFunction(smearFuncName, iter->getType(), smearType);
+                smearFunc = llvm::dyn_cast<llvm::Function>(sf.getCallee());
+#endif
                 assert(smearFunc != NULL);
                 smearFunc->setDoesNotThrow();
                 smearFunc->setDoesNotAccessMemory();
@@ -5449,6 +5468,7 @@ restart:
                 // are the same as the two arguments to the compare we're
                 // replacing and the third argument is the mask type.
                 llvm::Type *cmpOpType = opCmp->getOperand(0)->getType();
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_8_0
                 llvm::Constant *acf =
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
                     m->module->getOrInsertFunction(funcName, LLVMTypes::MaskType, cmpOpType, cmpOpType,
@@ -5458,6 +5478,11 @@ restart:
                                                    LLVMTypes::MaskType);
 #endif
                 andCmpFunc = llvm::dyn_cast<llvm::Function>(acf);
+#else
+                llvm::FunctionCallee acf = m->module->getOrInsertFunction(funcName, LLVMTypes::MaskType, cmpOpType,
+                                                                          cmpOpType, LLVMTypes::MaskType);
+                andCmpFunc = llvm::dyn_cast<llvm::Function>(acf.getCallee());
+#endif
                 Assert(andCmpFunc != NULL);
                 andCmpFunc->setDoesNotThrow();
                 andCmpFunc->setDoesNotAccessMemory();
@@ -5500,8 +5525,10 @@ class MaskOpsCleanupPass : public llvm::BasicBlockPass {
         notFunc =
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
             llvm::dyn_cast<llvm::Function>(m->getOrInsertFunction("__not", mt, mt, NULL));
-#else // LLVM 5.0+
+#elif ISPC_LLVM_VERSION <= ISPC_LLVM_8_0 // LLVM 5.0-LLVM 8.0
             llvm::dyn_cast<llvm::Function>(m->getOrInsertFunction("__not", mt, mt));
+#else                                    // LLVM 9.0+
+            llvm::dyn_cast<llvm::Function>(m->getOrInsertFunction("__not", mt, mt).getCallee());
 #endif
         assert(notFunc != NULL);
 #if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
@@ -5515,8 +5542,10 @@ class MaskOpsCleanupPass : public llvm::BasicBlockPass {
         andNotFuncs[0] =
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
             llvm::dyn_cast<llvm::Function>(m->getOrInsertFunction("__and_not1", mt, mt, mt, NULL));
-#else // LLVM 5.0+
+#elif ISPC_LLVM_VERSION <= ISPC_LLVM_8_0 // LLVM 5.0-LLVM 8.0
             llvm::dyn_cast<llvm::Function>(m->getOrInsertFunction("__and_not1", mt, mt, mt));
+#else                                    // LLVM 9.0+
+            llvm::dyn_cast<llvm::Function>(m->getOrInsertFunction("__and_not1", mt, mt, mt).getCallee());
 #endif
         assert(andNotFuncs[0] != NULL);
 #if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
@@ -5529,8 +5558,10 @@ class MaskOpsCleanupPass : public llvm::BasicBlockPass {
         andNotFuncs[1] =
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
             llvm::dyn_cast<llvm::Function>(m->getOrInsertFunction("__and_not2", mt, mt, mt, NULL));
-#else // LLVM 5.0+
+#elif ISPC_LLVM_VERSION <= ISPC_LLVM_8_0 // LLVM 5.0-LLVM 8.0
             llvm::dyn_cast<llvm::Function>(m->getOrInsertFunction("__and_not2", mt, mt, mt));
+#else                                    // LLVM 9.0+
+            llvm::dyn_cast<llvm::Function>(m->getOrInsertFunction("__and_not2", mt, mt, mt).getCallee());
 #endif
         assert(andNotFuncs[1] != NULL);
 #if ISPC_LLVM_VERSION == ISPC_LLVM_3_2

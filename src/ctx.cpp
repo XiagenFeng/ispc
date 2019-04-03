@@ -211,6 +211,7 @@ CFInfo *CFInfo::GetSwitch(bool isUniform, llvm::BasicBlock *breakTarget, llvm::B
 FunctionEmitContext::FunctionEmitContext(Function *func, Symbol *funSym, llvm::Function *lf, SourcePos firstStmtPos) {
     function = func;
     llvmFunction = lf;
+    switchConditionWasUniform = false;
 
     /* Create a new basic block to store all of the allocas */
     allocaBlock = llvm::BasicBlock::Create(*g->ctx, "allocas", llvmFunction, 0);
@@ -277,14 +278,19 @@ FunctionEmitContext::FunctionEmitContext(Function *func, Symbol *funSym, llvm::F
                                          LLVMMaskAllOn, "__all_on_mask");
 
             char buf[256];
-            sprintf(buf, "__off_all_on_mask_%s", g->target->GetISAString());
+            snprintf(buf, sizeof(buf), "__off_all_on_mask_%s", g->target->GetISAString());
+
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_8_0
             llvm::Constant *offFunc =
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
                 m->module->getOrInsertFunction(buf, LLVMTypes::VoidType, NULL);
 #else // LLVM 5.0+
                 m->module->getOrInsertFunction(buf, LLVMTypes::VoidType);
 #endif
-
+#else // LLVM 9.0+
+            llvm::FunctionCallee offFuncCallee = m->module->getOrInsertFunction(buf, LLVMTypes::VoidType);
+            llvm::Constant *offFunc = llvm::cast<llvm::Constant>(offFuncCallee.getCallee());
+#endif
             AssertPos(currentPos, llvm::isa<llvm::Function>(offFunc));
             llvm::BasicBlock *offBB = llvm::BasicBlock::Create(*g->ctx, "entry", (llvm::Function *)offFunc, 0);
             llvm::StoreInst *inst = new llvm::StoreInst(LLVMMaskAllOff, globalAllOnMaskPtr, offBB);
@@ -401,6 +407,9 @@ FunctionEmitContext::FunctionEmitContext(Function *func, Symbol *funSym, llvm::F
 
         /* And start a scope representing the initial function scope */
         StartScope();
+    } else {
+        diSubprogram = NULL;
+        diFile = NULL;
     }
 }
 
@@ -2046,8 +2055,8 @@ llvm::Value *FunctionEmitContext::GetElementPtrInst(llvm::Value *basePtr, llvm::
         ptrType = PointerType::GetUniform(ptrRefType->GetReferenceTarget());
     else {
         ptrType = CastType<PointerType>(ptrRefType);
-        AssertPos(currentPos, ptrType != NULL);
     }
+    AssertPos(currentPos, ptrType != NULL);
 
     if (ptrType->IsSlice()) {
         AssertPos(currentPos, llvm::isa<llvm::StructType>(basePtr->getType()));
@@ -2912,7 +2921,7 @@ void FunctionEmitContext::MemcpyInst(llvm::Value *dest, llvm::Value *src, llvm::
     }
     if (align == NULL)
         align = LLVMInt32(1);
-
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_8_0
     llvm::Constant *mcFunc =
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
         m->module->getOrInsertFunction("llvm.memcpy.p0i8.p0i8.i64", LLVMTypes::VoidType, LLVMTypes::VoidPointerType,
@@ -2928,7 +2937,12 @@ void FunctionEmitContext::MemcpyInst(llvm::Value *dest, llvm::Value *src, llvm::
         m->module->getOrInsertFunction("llvm.memcpy.p0i8.p0i8.i64", LLVMTypes::VoidType, LLVMTypes::VoidPointerType,
                                        LLVMTypes::VoidPointerType, LLVMTypes::Int64Type, LLVMTypes::BoolType);
 #endif
-
+#else // LLVM 9.0+
+    llvm::FunctionCallee mcFuncCallee =
+        m->module->getOrInsertFunction("llvm.memcpy.p0i8.p0i8.i64", LLVMTypes::VoidType, LLVMTypes::VoidPointerType,
+                                       LLVMTypes::VoidPointerType, LLVMTypes::Int64Type, LLVMTypes::BoolType);
+    llvm::Constant *mcFunc = llvm::cast<llvm::Constant>(mcFuncCallee.getCallee());
+#endif
     AssertPos(currentPos, mcFunc != NULL);
     AssertPos(currentPos, llvm::isa<llvm::Function>(mcFunc));
 
@@ -2967,7 +2981,7 @@ llvm::Value *FunctionEmitContext::ExtractInst(llvm::Value *v, int elt, const cha
 
     if (name == NULL) {
         char buf[32];
-        sprintf(buf, "_extract_%d", elt);
+        snprintf(buf, sizeof(buf), "_extract_%d", elt);
         name = LLVMGetName(v, buf);
     }
 
@@ -2988,7 +3002,7 @@ llvm::Value *FunctionEmitContext::InsertInst(llvm::Value *v, llvm::Value *eltVal
 
     if (name == NULL) {
         char buf[32];
-        sprintf(buf, "_insert_%d", elt);
+        snprintf(buf, sizeof(buf), "_insert_%d", elt);
         name = LLVMGetName(v, buf);
     }
 
@@ -3009,7 +3023,7 @@ llvm::Value *FunctionEmitContext::ShuffleInst(llvm::Value *v1, llvm::Value *v2, 
 
     if (name == NULL) {
         char buf[32];
-        sprintf(buf, "_shuffle");
+        snprintf(buf, sizeof(buf), "_shuffle");
         name = LLVMGetName(v1, buf);
     }
 
@@ -3030,7 +3044,7 @@ llvm::Value *FunctionEmitContext::BroadcastValue(llvm::Value *v, llvm::Type *vec
 
     if (name == NULL) {
         char buf[32];
-        sprintf(buf, "_broadcast");
+        snprintf(buf, sizeof(buf), "_broadcast");
         name = LLVMGetName(v, buf);
     }
 

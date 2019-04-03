@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2014, Intel Corporation
+  Copyright (c) 2010-2019, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -1163,8 +1163,9 @@ void ForStmt::EmitCode(FunctionEmitContext *ctx) const {
     // any of the mask values are true.
     if (uniformTest) {
         if (doCoherentCheck)
-            Warning(test->pos, "Uniform condition supplied to cfor/cwhile "
-                               "statement.");
+            if (test)
+                Warning(test->pos, "Uniform condition supplied to cfor/cwhile "
+                                   "statement.");
         AssertPos(pos, ltest->getType() == LLVMTypes::BoolType);
         ctx->BranchInst(bloop, bexit, ltest);
     } else {
@@ -2549,7 +2550,7 @@ static bool lSwitchASTPreVisit(ASTNode *node, void *d) {
         // 'case' statement and record the mappign between the case label
         // value and the basic block
         char buf[32];
-        sprintf(buf, "case_%d", cs->value);
+        snprintf(buf, sizeof(buf), "case_%d", cs->value);
         bb = svi->ctx->CreateBasicBlock(buf);
         svi->caseBlocks.push_back(std::make_pair(cs->value, bb));
     } else if (ds != NULL) {

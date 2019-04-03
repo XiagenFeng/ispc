@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2014, Intel Corporation
+  Copyright (c) 2010-2019, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -150,7 +150,8 @@ lMaybeIssuePrecisionWarning(const AtomicType *toAtomicType,
 ///////////////////////////////////////////////////////////////////////////
 
 static Expr *lArrayToPointer(Expr *expr) {
-    AssertPos(expr->pos, expr && CastType<ArrayType>(expr->GetType()));
+    Assert(expr != NULL);
+    AssertPos(expr->pos, CastType<ArrayType>(expr->GetType()));
 
     Expr *zero = new ConstExpr(AtomicType::UniformInt32, 0, expr->pos);
     Expr *index = new IndexExpr(expr, zero, expr->pos);
@@ -1073,6 +1074,14 @@ template <typename T> static Expr *lOptimizeBitNot(ConstExpr *constExpr, const T
     return new ConstExpr(type, v, pos);
 }
 
+template <typename T> static Expr *lOptimizeNegate(ConstExpr *constExpr, const Type *type, SourcePos pos) {
+    T v[ISPC_MAX_NVEC];
+    int count = constExpr->GetValues(v);
+    for (int i = 0; i < count; ++i)
+        v[i] = -v[i];
+    return new ConstExpr(type, v, pos);
+}
+
 Expr *UnaryExpr::Optimize() {
     ConstExpr *constExpr = llvm::dyn_cast<ConstExpr>(expr);
     // If the operand isn't a constant, then we can't do any optimization
@@ -1094,18 +1103,28 @@ Expr *UnaryExpr::Optimize() {
     case Negate: {
         if (Type::EqualIgnoringConst(type, AtomicType::UniformInt64) ||
             Type::EqualIgnoringConst(type, AtomicType::VaryingInt64)) {
-            int64_t v[ISPC_MAX_NVEC];
-            int count = constExpr->GetValues(v);
-            for (int i = 0; i < count; ++i)
-                v[i] = -v[i];
-            return new ConstExpr(type, v, pos);
+            return lOptimizeNegate<int64_t>(constExpr, type, pos);
         } else if (Type::EqualIgnoringConst(type, AtomicType::UniformUInt64) ||
                    Type::EqualIgnoringConst(type, AtomicType::VaryingUInt64)) {
-            uint64_t v[ISPC_MAX_NVEC];
-            int count = constExpr->GetValues(v);
-            for (int i = 0; i < count; ++i)
-                v[i] = -v[i];
-            return new ConstExpr(type, v, pos);
+            return lOptimizeNegate<uint64_t>(constExpr, type, pos);
+        } else if (Type::EqualIgnoringConst(type, AtomicType::UniformInt32) ||
+                   Type::EqualIgnoringConst(type, AtomicType::VaryingInt32)) {
+            return lOptimizeNegate<int32_t>(constExpr, type, pos);
+        } else if (Type::EqualIgnoringConst(type, AtomicType::UniformUInt32) ||
+                   Type::EqualIgnoringConst(type, AtomicType::VaryingUInt32)) {
+            return lOptimizeNegate<uint32_t>(constExpr, type, pos);
+        } else if (Type::EqualIgnoringConst(type, AtomicType::UniformInt16) ||
+                   Type::EqualIgnoringConst(type, AtomicType::VaryingInt16)) {
+            return lOptimizeNegate<int16_t>(constExpr, type, pos);
+        } else if (Type::EqualIgnoringConst(type, AtomicType::UniformUInt16) ||
+                   Type::EqualIgnoringConst(type, AtomicType::VaryingUInt32)) {
+            return lOptimizeNegate<uint16_t>(constExpr, type, pos);
+        } else if (Type::EqualIgnoringConst(type, AtomicType::UniformInt8) ||
+                   Type::EqualIgnoringConst(type, AtomicType::VaryingInt8)) {
+            return lOptimizeNegate<int8_t>(constExpr, type, pos);
+        } else if (Type::EqualIgnoringConst(type, AtomicType::UniformUInt8) ||
+                   Type::EqualIgnoringConst(type, AtomicType::VaryingUInt8)) {
+            return lOptimizeNegate<uint8_t>(constExpr, type, pos);
         } else {
             // For all the other types, it's safe to stuff whatever we have
             // into a double, do the negate as a double, and then return a
@@ -1354,7 +1373,7 @@ static llvm::Value *lEmitBinaryPointerArith(BinaryExpr::Op op, llvm::Value *valu
                                             const Type *type0, const Type *type1, FunctionEmitContext *ctx,
                                             SourcePos pos) {
     const PointerType *ptrType = CastType<PointerType>(type0);
-
+    AssertPos(pos, ptrType != NULL);
     switch (op) {
     case BinaryExpr::Add:
         // ptr + integer
@@ -4592,9 +4611,12 @@ llvm::Value *VectorMemberExpr::GetValue(FunctionEmitContext *ctx) const {
         // to the same logic where it's used elsewhere
         llvm::Value *elementMask = ctx->GetFullMask();
 
-        const Type *elementPtrType = basePtrType->IsUniformType()
-                                         ? PointerType::GetUniform(exprVectorType->GetElementType())
-                                         : PointerType::GetVarying(exprVectorType->GetElementType());
+        const Type *elementPtrType = NULL;
+        if (CastType<ReferenceType>(basePtrType) != NULL)
+            elementPtrType = PointerType::GetUniform(basePtrType->GetReferenceTarget());
+        else
+            elementPtrType = basePtrType->IsUniformType() ? PointerType::GetUniform(exprVectorType->GetElementType())
+                                                          : PointerType::GetVarying(exprVectorType->GetElementType());
 
         ctx->SetDebugPos(pos);
         for (size_t i = 0; i < identifier.size(); ++i) {

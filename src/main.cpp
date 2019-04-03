@@ -63,7 +63,7 @@
 #endif
 #endif // ISPC_IS_WINDOWS
 
-#define MAX_NUM_ARGS (128)
+#define MAX_NUM_ARGS (512)
 
 static void lPrintVersion() {
 #ifdef ISPC_IS_WINDOWS
@@ -90,7 +90,8 @@ static void usage(int ret) {
 #endif
     printf("    ");
     char cpuHelp[2048];
-    sprintf(cpuHelp, "[--cpu=<cpu>]\t\t\tSelect target CPU type\n<cpu>={%s}\n", Target::SupportedCPUs().c_str());
+    snprintf(cpuHelp, sizeof(cpuHelp), "[--cpu=<cpu>]\t\t\tSelect target CPU type\n<cpu>={%s}\n",
+             Target::SupportedCPUs().c_str());
     PrintWithWordBreaks(cpuHelp, 16, TerminalWidth(), stdout);
     printf("    [-D<foo>]\t\t\t\t#define given value when running preprocessor\n");
     printf("    [--dev-stub <filename>]\t\tEmit device-side offload stub functions to file\n");
@@ -131,7 +132,10 @@ static void usage(int ret) {
     printf("    [--nostdlib]\t\t\tDon't make the ispc standard library available\n");
     printf("    [--nocpp]\t\t\t\tDon't run the C preprocessor\n");
     printf("    [-o <name>/--outfile=<name>]\tOutput filename (may be \"-\" for standard output)\n");
-    printf("    [-O0/-O(1/2/3)]\t\t\tSet optimization level (off or on). Optimizations are on by default.\n");
+    printf("    [-O0/-O(1/2/3)]\t\t\tSet optimization level. Default behavior is to optimize for speed.\n");
+    printf("        -O0\t\t\t\tOptimizations disabled.\n");
+    printf("        -O1\t\t\t\tOptimization for size.\n");
+    printf("        -O2/O3\t\t\t\tOptimization for speed.\n");
     printf("    [--opt=<option>]\t\t\tSet optimization option\n");
     printf("        disable-assertions\t\tRemove assertion statements from final code.\n");
     printf("        disable-fma\t\t\tDisable 'fused multiply-add' instructions (on targets that support them)\n");
@@ -145,10 +149,10 @@ static void usage(int ret) {
     printf("    [--quiet]\t\t\t\tSuppress all output\n");
     printf("    ");
     char targetHelp[2048];
-    sprintf(targetHelp,
-            "[--target=<t>]\t\t\tSelect target ISA and width.\n"
-            "<t>={%s}",
-            Target::SupportedTargets());
+    snprintf(targetHelp, sizeof(targetHelp),
+             "[--target=<t>]\t\t\tSelect target ISA and width.\n"
+             "<t>={%s}",
+             Target::SupportedTargets());
     PrintWithWordBreaks(targetHelp, 24, TerminalWidth(), stdout);
     printf("    [--version]\t\t\t\tPrint ispc version\n");
     printf("    [--werror]\t\t\t\tTreat warnings as errors\n");
@@ -354,6 +358,8 @@ static int ParsingPhaseName(char *stage) {
 
 static std::set<int> ParsingPhases(char *stages) {
     std::set<int> phases;
+    /* ensure the string is NUL terminated */
+    stages[sizeof(stages) - 1] = '\0';
     int begin = ParsingPhaseName(stages);
     int end = begin;
 
@@ -635,6 +641,8 @@ int main(int Argc, char *Argv[]) {
                    !strcmp(argv[i], "-O3")) {
             g->opt.level = 1;
             g->codegenOptLevel = Globals::CodegenOptLevel::Aggressive;
+            if (!strcmp(argv[i], "-O1"))
+                g->opt.disableCoherentControlFlow = true;
         } else if (!strcmp(argv[i], "-"))
             ;
         else if (!strcmp(argv[i], "--nostdlib"))

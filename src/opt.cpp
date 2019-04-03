@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2016, Intel Corporation
+  Copyright (c) 2010-2019, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -167,8 +167,9 @@ static llvm::Pass *CreatePromoteLocalToPrivatePass();
 #endif /* ISPC_NVPTX_ENABLED */
 
 #define DEBUG_START_PASS(NAME)                                                                                         \
-    if (g->debugPrint && (getenv("FUNC") == NULL || !strncmp(bb.getParent()->getName().str().c_str(), getenv("FUNC"),  \
-                                                             strlen(getenv("FUNC"))))) {                               \
+    if (g->debugPrint &&                                                                                               \
+        (getenv("FUNC") == NULL || getenv("FUNC") != NULL && !strncmp(bb.getParent()->getName().str().c_str(),         \
+                                                                      getenv("FUNC"), strlen(getenv("FUNC"))))) {      \
         fprintf(stderr, "Start of " NAME "\n");                                                                        \
         fprintf(stderr, "---------------\n");                                                                          \
         bb.dump();                                                                                                     \
@@ -176,8 +177,9 @@ static llvm::Pass *CreatePromoteLocalToPrivatePass();
     } else /* eat semicolon */
 
 #define DEBUG_END_PASS(NAME)                                                                                           \
-    if (g->debugPrint && (getenv("FUNC") == NULL || !strncmp(bb.getParent()->getName().str().c_str(), getenv("FUNC"),  \
-                                                             strlen(getenv("FUNC"))))) {                               \
+    if (g->debugPrint &&                                                                                               \
+        (getenv("FUNC") == NULL || getenv("FUNC") != NULL && !strncmp(bb.getParent()->getName().str().c_str(),         \
+                                                                      getenv("FUNC"), strlen(getenv("FUNC"))))) {      \
         fprintf(stderr, "End of " NAME " %s\n", modifiedAny ? "** CHANGES **" : "");                                   \
         fprintf(stderr, "---------------\n");                                                                          \
         bb.dump();                                                                                                     \
@@ -471,9 +473,9 @@ void DebugPassManager::add(llvm::Pass *P, int stage = -1) {
             // adding dump of LLVM IR after optimization
             char buf[100];
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-            sprintf(buf, "\n\n*****LLVM IR after phase %d: %s*****\n\n", number, P->getPassName());
+            snprintf(buf, sizeof(buf), "\n\n*****LLVM IR after phase %d: %s*****\n\n", number, P->getPassName());
 #else // LLVM 4.0+
-            sprintf(buf, "\n\n*****LLVM IR after phase %d: %s*****\n\n", number, P->getPassName().data());
+            snprintf(buf, sizeof(buf), "\n\n*****LLVM IR after phase %d: %s*****\n\n", number, P->getPassName().data());
 #endif
             PM.add(CreateDebugPass(buf));
         }
@@ -482,7 +484,7 @@ void DebugPassManager::add(llvm::Pass *P, int stage = -1) {
         if (g->debugIR == number) {
             // adding generating of LLVM IR debug after optimization
             char buf[100];
-            sprintf(buf, "Debug_IR_after_%d_phase.bc", number);
+            snprintf(buf, sizeof(buf), "Debug_IR_after_%d_phase.bc", number);
             PM.add(llvm::createDebugIRPass(true, true, ".", buf));
         }
 #endif
@@ -2315,7 +2317,8 @@ static bool lGSToGSBaseOffsets(llvm::CallInst *callInst) {
         // passed as a separate parameter to the gather/scatter functions,
         // which in turn allows their implementations to end up emitting
         // x86 instructions with constant offsets encoded in them.
-        llvm::Value *constOffset, *variableOffset;
+        llvm::Value *constOffset = NULL;
+        llvm::Value *variableOffset = NULL;
         lExtractConstantOffset(offsetVector, &constOffset, &variableOffset, callInst);
         if (constOffset == NULL)
             constOffset = LLVMIntAsType(0, offsetVector->getType());
@@ -2488,7 +2491,8 @@ static bool lGSBaseOffsetsGetMoreConst(llvm::CallInst *callInst) {
         return false;
 
     // Try to decompose the old variable offset
-    llvm::Value *constOffset, *variableOffset;
+    llvm::Value *constOffset = NULL;
+    llvm::Value *variableOffset = NULL;
     lExtractConstantOffset(origVariableOffset, &constOffset, &variableOffset, callInst);
 
     // No luck
@@ -3199,21 +3203,21 @@ static void lCoalescePerfInfo(const std::vector<llvm::CallInst *> &coalesceGroup
     if (coalesceGroup.size() > 1) {
         const char *plural = (coalesceGroup.size() > 2) ? "s" : "";
         char otherBuf[32];
-        sprintf(otherBuf, "(other%s at line%s ", plural, plural);
-        strcat(otherPositions, otherBuf);
+        snprintf(otherBuf, sizeof(otherBuf), "(other%s at line%s ", plural, plural);
+        strncat(otherPositions, otherBuf, sizeof(otherPositions) - strlen(otherPositions) - 1);
 
         for (int i = 1; i < (int)coalesceGroup.size(); ++i) {
             SourcePos p;
             bool ok = lGetSourcePosFromMetadata(coalesceGroup[i], &p);
             if (ok) {
                 char buf[32];
-                sprintf(buf, "%d", p.first_line);
-                strcat(otherPositions, buf);
+                snprintf(buf, sizeof(buf), "%d", p.first_line);
+                strncat(otherPositions, buf, sizeof(otherPositions) - strlen(otherPositions) - 1);
                 if (i < (int)coalesceGroup.size() - 1)
-                    strcat(otherPositions, ", ");
+                    strncat(otherPositions, ", ", sizeof(otherPositions) - strlen(otherPositions) - 1);
             }
         }
-        strcat(otherPositions, ") ");
+        strncat(otherPositions, ") ", sizeof(otherPositions) - strlen(otherPositions) - 1);
     }
 
     // Count how many loads of each size there were.
@@ -3227,11 +3231,14 @@ static void lCoalescePerfInfo(const std::vector<llvm::CallInst *> &coalesceGroup
     std::map<int, int>::const_iterator iter = loadOpsCount.begin();
     while (iter != loadOpsCount.end()) {
         char buf[32];
-        sprintf(buf, "%d x %d-wide", iter->second, iter->first);
-        strcat(loadOpsInfo, buf);
+        snprintf(buf, sizeof(buf), "%d x %d-wide", iter->second, iter->first);
+        if ((strlen(loadOpsInfo) + strlen(buf)) >= 512) {
+            break;
+        }
+        strncat(loadOpsInfo, buf, sizeof(loadOpsInfo) - strlen(loadOpsInfo) - 1);
         ++iter;
         if (iter != loadOpsCount.end())
-            strcat(loadOpsInfo, ", ");
+            strncat(loadOpsInfo, ", ", sizeof(loadOpsInfo) - strlen(loadOpsInfo) - 1);
     }
 
     if (coalesceGroup.size() == 1)
@@ -3368,7 +3375,8 @@ static llvm::Value *lApplyLoad1(llvm::Value *result, const CoalescedLoadOp &load
     elements that they apply to. */
 static llvm::Value *lApplyLoad2(llvm::Value *result, const CoalescedLoadOp &load, const int64_t offsets[4], bool set[4],
                                 llvm::Instruction *insertBefore) {
-    for (int elt = 0; elt < 4; ++elt) {
+    int elt = 0;
+    while (elt < 4) {
         // First, try to do a 64-bit-wide insert into the result vector.
         // We can do this when we're currently at an even element, when the
         // current and next element have consecutive values, and where the
@@ -3379,7 +3387,7 @@ static llvm::Value *lApplyLoad2(llvm::Value *result, const CoalescedLoadOp &load
                   "Load 2 @ %" PRId64 " matches for elements #%d,%d "
                   "(values %" PRId64 ",%" PRId64 ")",
                   load.start, elt, elt + 1, offsets[elt], offsets[elt + 1]);
-            Assert(set[elt] == false && set[elt + 1] == false);
+            Assert(set[elt] == false && ((elt < 3) && set[elt + 1] == false));
 
             // In this case, we bitcast from a 4xi32 to a 2xi64 vector
             llvm::Type *vec2x64Type = llvm::VectorType::get(LLVMTypes::Int64Type, 2);
@@ -3393,7 +3401,10 @@ static llvm::Value *lApplyLoad2(llvm::Value *result, const CoalescedLoadOp &load
             llvm::Type *vec4x32Type = llvm::VectorType::get(LLVMTypes::Int32Type, 4);
             result = new llvm::BitCastInst(result, vec4x32Type, "to4x32", insertBefore);
 
-            set[elt] = set[elt + 1] = true;
+            set[elt] = true;
+            if (elt < 3) {
+                set[elt + 1] = true;
+            }
             // Advance elt one extra time, since we just took care of two
             // elements
             ++elt;
@@ -3409,6 +3420,7 @@ static llvm::Value *lApplyLoad2(llvm::Value *result, const CoalescedLoadOp &load
             result = llvm::InsertElementInst::Create(result, toInsert, LLVMInt32(elt), "insert_load", insertBefore);
             set[elt] = true;
         }
+        ++elt;
     }
 
     return result;
@@ -4346,7 +4358,7 @@ static llvm::Pass *CreateIsCompileTimeConstantPass(bool isLastTry) { return new 
 class DebugPass : public llvm::ModulePass {
   public:
     static char ID;
-    DebugPass(char *output) : ModulePass(ID) { sprintf(str_output, "%s", output); }
+    DebugPass(char *output) : ModulePass(ID) { snprintf(str_output, sizeof(str_output), "%s", output); }
 
 #if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
     const char *getPassName() const { return "Dump LLVM IR"; }
