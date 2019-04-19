@@ -117,7 +117,7 @@ find_package(FLEX 2.5 REQUIRED)
 set (ISPC_MASKS 1 8 16 32 64)
 set (ISPC_TARGETS avx2-i64x4 avx11-i64x4 avx1-i64x4 avx1 avx1-x2 avx11 avx11-x2 avx2 avx2-x2
     sse2 sse2-x2 sse4-8 sse4-16 sse4 sse4-x2
-    generic-4 generic-8 generic-16 generic-32 generic-64 generic-1 knl skx)
+    generic-4 generic-8 generic-16 generic-32 generic-64 generic-1 knl skx skx-8)
 
 set(CLANG_LIBRARY_LIST clangFrontend clangDriver clangSerialization clangParse clangSema clangAnalysis clangAST clangBasic clangEdit clangLex)
 set(LLVM_COMPONENTS engine ipo bitreader bitwriter instrumentation linker)
@@ -217,7 +217,7 @@ if (UNIX)
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wno-sign-compare -Wno-unused-function -Werror ${LLVM_CPP_FLAGS})
     # Security options
     target_compile_options(${PROJECT_NAME} PRIVATE -fstack-protector -fdata-sections -ffunction-sections
-                           -Wformat -Wformat-security -fPIE -fPIC)
+                           -Wformat -Wformat-security -fpie -fwrapv)
     set_source_files_properties("src/cbackend.cpp" PROPERTIES COMPILE_FLAGS "-fno-exceptions")
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE /W3 /wd4146 /wd4800 /wd4996 /wd4355 /wd4624 /wd4244 /wd4141 /wd4291 /wd4018)
@@ -243,8 +243,10 @@ if (WIN32)
     if (NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
         set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/OPT:REF /OPT:ICF")
     endif()
+elseif (APPLE)
 else()
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-z noexecstack -z relro -z now")
+    # Link options for security hardening.
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-z noexecstack -z relro -z now -Wl,--gc-sections")
 endif()
 
 if (ISPC_STATIC_STDCXX_LINK)

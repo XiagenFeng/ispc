@@ -517,7 +517,8 @@ int Module::CompileFile() {
         for (llvm::Function &f : *module)
             f.addFnAttr("no-frame-pointer-elim", "true");
 #endif
-
+    for (llvm::Function &f : *module)
+        g->target->markFuncWithTargetAttr(&f);
     ast->GenerateIR();
 
     if (diBuilder)
@@ -2178,7 +2179,11 @@ bool Module::writeHeader(const char *fn) {
             guard += "_";
         ++p;
     }
-    fprintf(f, "#ifndef %s\n#define %s\n\n", guard.c_str(), guard.c_str());
+
+    if (g->noPragmaOnce)
+        fprintf(f, "#ifndef %s\n#define %s\n\n", guard.c_str(), guard.c_str());
+    else
+        fprintf(f, "#pragma once\n");
 
     fprintf(f, "#include <stdint.h>\n\n");
 
@@ -2249,7 +2254,8 @@ bool Module::writeHeader(const char *fn) {
     fprintf(f, "\n#ifdef __cplusplus\n} /* namespace */\n#endif // __cplusplus\n");
 
     // end guard
-    fprintf(f, "\n#endif // %s\n", guard.c_str());
+    if (g->noPragmaOnce)
+        fprintf(f, "\n#endif // %s\n", guard.c_str());
 
     fclose(f);
     return true;
@@ -2288,7 +2294,10 @@ bool Module::writeDispatchHeader(DispatchHeaderInfo *DHI) {
         ++p;
     }
     if (DHI->EmitFrontMatter) {
-        fprintf(f, "#ifndef %s\n#define %s\n\n", guard.c_str(), guard.c_str());
+        if (g->noPragmaOnce)
+            fprintf(f, "#ifndef %s\n#define %s\n\n", guard.c_str(), guard.c_str());
+        else
+            fprintf(f, "#pragma once\n");
 
         fprintf(f, "#include <stdint.h>\n\n");
 
@@ -2373,7 +2382,8 @@ bool Module::writeDispatchHeader(DispatchHeaderInfo *DHI) {
         fprintf(f, "\n#ifdef __cplusplus\n} /* namespace */\n#endif // __cplusplus\n");
 
         // end guard
-        fprintf(f, "\n#endif // %s\n", guard.c_str());
+        if (g->noPragmaOnce)
+            fprintf(f, "\n#endif // %s\n", guard.c_str());
         DHI->EmitBackMatter = false;
     }
 
@@ -3207,7 +3217,7 @@ int Module::CompileAndOutput(const char *srcFile, const char *arch, const char *
             firstISA = Target::ISAToTargetString((Target::ISA)i);
             firstTargetMachine = targetMachines[i++];
         }
-        Assert(firstISA != "");
+        Assert(strcmp(firstISA, "") != 0);
         Assert(firstTargetMachine != NULL);
 
         g->target = new Target(arch, cpu, firstISA, 0 != (outputFlags & GeneratePIC), false, treatGenericAsSmth);
