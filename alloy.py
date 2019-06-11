@@ -33,6 +33,7 @@
 
 # // Author: Filippov Ilia
 
+from collections import OrderedDict
 import re
 
 def tail_and_save(file_in, file_out, tail = 100):    
@@ -137,6 +138,9 @@ def checkout_LLVM(component, use_git, version_LLVM, revision, target_dir, from_v
     if  version_LLVM == "trunk":
         SVN_PATH="trunk"
         GIT_BRANCH="master"
+    elif  version_LLVM == "8_0":
+        SVN_PATH="tags/RELEASE_800/final"
+        GIT_BRANCH="release_80"
     elif  version_LLVM == "7_0":
         SVN_PATH="tags/RELEASE_701/final"
         GIT_BRANCH="release_70"
@@ -424,12 +428,18 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
 
 
 def unsupported_llvm_targets(LLVM_VERSION):
-    prohibited_list = {"3.2":["avx512knl-i32x16", "avx512skx-i32x16"],
-                       "3.3":["avx512knl-i32x16", "avx512skx-i32x16"],
-                       "3.4":["avx512knl-i32x16", "avx512skx-i32x16"],
-                       "3.5":["avx512knl-i32x16", "avx512skx-i32x16"],
-                       "3.6":["avx512knl-i32x16", "avx512skx-i32x16"],
-                       "3.7":["avx512skx-i32x16"]}
+    prohibited_list = {"3.2":["avx512knl-i32x16", "avx512skx-i32x16", "avx512skx-i32x8"],
+                       "3.3":["avx512knl-i32x16", "avx512skx-i32x16", "avx512skx-i32x8"],
+                       "3.4":["avx512knl-i32x16", "avx512skx-i32x16", "avx512skx-i32x8"],
+                       "3.5":["avx512knl-i32x16", "avx512skx-i32x16", "avx512skx-i32x8"],
+                       "3.6":["avx512knl-i32x16", "avx512skx-i32x16", "avx512skx-i32x8"],
+                       "3.7":["avx512skx-i32x16", "avx512skx-i32x8"],
+                       "3.8":["avx512skx-i32x8"],
+                       "3.9":["avx512skx-i32x8"],
+                       "4.0":["avx512skx-i32x8"],
+                       "5.0":["avx512skx-i32x8"],
+                       "6.0":["avx512skx-i32x8"],
+                       "7.0":["avx512skx-i32x8"]}
     if LLVM_VERSION in prohibited_list:
         return prohibited_list[LLVM_VERSION]
     return []
@@ -464,22 +474,22 @@ def check_targets():
     #   flag for sde to emulate this platform,
     #   flag is this is supported on current platform
     # ]
-    target_dict = {
-      "SSE2":   [["sse2-i32x4",  "sse2-i32x8"],
-                 ["SSE2"], "-p4", False],
-      "SSE4":   [["sse4-i32x4",  "sse4-i32x8",   "sse4-i16x8", "sse4-i8x16"],
-                 ["SSE2", "SSE4"], "-wsm", False],
-      "AVX":    [["avx1-i32x4",  "avx1-i32x8",  "avx1-i32x16",  "avx1-i64x4"],
-                 ["SSE2", "SSE4", "AVX"], "-snb", False],
-      "AVX1.1": [["avx1.1-i32x8","avx1.1-i32x16","avx1.1-i64x4"],
-                 ["SSE2", "SSE4", "AVX", "AVX1.1"], "-ivb", False],
-      "AVX2":   [["avx2-i32x8",  "avx2-i32x16",  "avx2-i64x4"],
-                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2"], "-hsw", False],
-      "KNL":    [["avx512knl-i32x16"],
-                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2", "KNL"], "-knl", False],
-      "SKX":    [["avx512skx-i32x16"],
-                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2", "SKX"], "-skx", False]
-    }
+    target_dict = OrderedDict([
+      ("SSE2",   [["sse2-i32x4",  "sse2-i32x8"],
+                 ["SSE2"], "-p4", False]),
+      ("SSE4",   [["sse4-i32x4",  "sse4-i32x8",   "sse4-i16x8", "sse4-i8x16"],
+                 ["SSE2", "SSE4"], "-wsm", False]),
+      ("AVX",    [["avx1-i32x4",  "avx1-i32x8",  "avx1-i32x16",  "avx1-i64x4"],
+                 ["SSE2", "SSE4", "AVX"], "-snb", False]),
+      ("AVX1.1", [["avx1.1-i32x8","avx1.1-i32x16","avx1.1-i64x4"],
+                 ["SSE2", "SSE4", "AVX", "AVX1.1"], "-ivb", False]),
+      ("AVX2",   [["avx2-i32x8",  "avx2-i32x16",  "avx2-i64x4"],
+                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2"], "-hsw", False]),
+      ("KNL",    [["avx512knl-i32x16"],
+                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2", "KNL"], "-knl", False]),
+      ("SKX",    [["avx512skx-i32x16", "avx512skx-i32x8"],
+                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2", "SKX"], "-skx", False])
+    ])
 
     hw_arch = take_lines("check_isa.exe", "first").split()[1]
 
@@ -711,7 +721,7 @@ def validation_run(only, only_targets, reference_branch, number, notify, update,
             archs.append("x86-64")
         if "native" in only:
             sde_targets_t = []
-        for i in ["3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "4.0", "5.0", "6.0", "7.0", "trunk"]:
+        for i in ["3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "4.0", "5.0", "6.0", "7.0", "8.0", "trunk"]:
             if i in only:
                 LLVM.append(i)
         if "current" in only:
@@ -996,7 +1006,7 @@ def Main():
         if os.environ.get("SMTP_ISPC") == None:
             error("you have no SMTP_ISPC in your environment for option notify", 1)
     if options.only != "":
-        test_only_r = " 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 4.0 5.0 6.0 7.0 trunk current build stability performance x86 x86-64 x86_64 -O0 -O2 native debug nodebug "
+        test_only_r = " 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 4.0 5.0 6.0 7.0 8.0 trunk current build stability performance x86 x86-64 x86_64 -O0 -O2 native debug nodebug "
         test_only = options.only.split(" ")
         for iterator in test_only:
             if not (" " + iterator + " " in test_only_r):
@@ -1117,7 +1127,7 @@ if __name__ == '__main__':
     llvm_group = OptionGroup(parser, "Options for building LLVM",
                     "These options must be used with -b option.")
     llvm_group.add_option('--version', dest='version',
-        help='version of llvm to build: 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 4.0 5.0 6.0 7.0 trunk. Default: trunk', default="trunk")
+        help='version of llvm to build: 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 4.0 5.0 6.0 7.0 8.0 trunk. Default: trunk', default="trunk")
     llvm_group.add_option('--with-gcc-toolchain', dest='gcc_toolchain_path',
          help='GCC install dir to use when building clang. It is important to set when ' +
          'you have alternative gcc installation. Note that otherwise gcc from standard ' +
@@ -1160,7 +1170,7 @@ if __name__ == '__main__':
     run_group.add_option('--only', dest='only',
         help='set types of tests. Possible values:\n' + 
             '-O0, -O2, x86, x86-64, stability (test only stability), performance (test only performance),\n' +
-            'build (only build with different LLVM), 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 5.0, 6.0, 7.0, trunk, native (do not use SDE),\n' +
+            'build (only build with different LLVM), 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 5.0, 6.0, 7.0, 8.0, trunk, native (do not use SDE),\n' +
             'current (do not rebuild ISPC), debug (only with debug info), nodebug (only without debug info, default).',
             default="")
     run_group.add_option('--perf_LLVM', dest='perf_llvm',

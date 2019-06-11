@@ -1,4 +1,4 @@
-;;  Copyright (c) 2015-2018, Intel Corporation
+;;  Copyright (c) 2015-2019, Intel Corporation
 ;;  All rights reserved.
 ;;
 ;;  Redistribution and use in source and binary forms, with or without
@@ -45,7 +45,11 @@ ifelse(LLVM_VERSION, LLVM_3_7,
     `include(`target-avx512-common.ll')',
          LLVM_VERSION, LLVM_7_0,
     `include(`target-avx512-common.ll')',
+         LLVM_VERSION, LLVM_7_1,
+    `include(`target-avx512-common.ll')',
          LLVM_VERSION, LLVM_8_0,
+    `include(`target-avx512-common.ll')',
+         LLVM_VERSION, LLVM_9_0,
     `include(`target-avx512-common.ll')'
   )
 
@@ -79,7 +83,11 @@ ifelse(LLVM_VERSION, LLVM_3_7,
     rcp_rsqrt_varying_float_knl(),
          LLVM_VERSION, LLVM_7_0,
     rcp_rsqrt_varying_float_knl(),
+         LLVM_VERSION, LLVM_7_1,
+    rcp_rsqrt_varying_float_knl(),
          LLVM_VERSION, LLVM_8_0,
+    rcp_rsqrt_varying_float_knl(),
+         LLVM_VERSION, LLVM_9_0,
     rcp_rsqrt_varying_float_knl()
   )
 

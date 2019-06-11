@@ -1,4 +1,4 @@
-;;  Copyright (c) 2010-2018, Intel Corporation
+;;  Copyright (c) 2010-2019, Intel Corporation
 ;;  All rights reserved.
 ;;
 ;;  Redistribution and use in source and binary forms, with or without
@@ -66,7 +66,11 @@ define(`PTR_OP_ARGS',
     ``$1 , $1 *'',
          LLVM_VERSION, LLVM_7_0,
     ``$1 , $1 *'',
+         LLVM_VERSION, LLVM_7_1,
+    ``$1 , $1 *'',
          LLVM_VERSION, LLVM_8_0,
+    ``$1 , $1 *'',
+         LLVM_VERSION, LLVM_9_0,
     ``$1 , $1 *'',
     ``$1 *''
   )
@@ -87,7 +91,11 @@ define(`MdORi64',
     ``i64'',
     LLVM_VERSION, LLVM_7_0,
     ``i64'',
+    LLVM_VERSION, LLVM_7_1,
+    ``i64'',
     LLVM_VERSION, LLVM_8_0,
+    ``i64'',
+    LLVM_VERSION, LLVM_9_0,
     ``i64'',
     ``double''
   )
@@ -106,7 +114,11 @@ define(`MfORi32',
     ``i32'',
     LLVM_VERSION, LLVM_7_0,
     ``i32'',
+    LLVM_VERSION, LLVM_7_1,
+    ``i32'',
     LLVM_VERSION, LLVM_8_0,
+    ``i32'',
+    LLVM_VERSION, LLVM_9_0,
     ``i32'',
     ``float''
   )
@@ -1600,7 +1612,7 @@ define <$1 x $2> @__atomic_compare_exchange_$3_global($2* %ptr, <$1 x $2> %cmp,
    %cmp_LANE_ID = extractelement <$1 x $2> %cmp, i32 LANE
    %val_LANE_ID = extractelement <$1 x $2> %val, i32 LANE
 
-  ;; 3.5, 3.6, 3.7, 3.8 and 3.9 code is the same since m4 has no OR and AND operators
+  ;; 3.5 - trunk code is the same since m4 has no OR and AND operators
   ifelse(LLVM_VERSION,LLVM_3_5,`
     %r_LANE_ID_t = cmpxchg $2 * %ptr, $2 %cmp_LANE_ID, $2 %val_LANE_ID seq_cst seq_cst
     %r_LANE_ID = extractvalue { $2, i1 } %r_LANE_ID_t, 0
@@ -1628,7 +1640,13 @@ define <$1 x $2> @__atomic_compare_exchange_$3_global($2* %ptr, <$1 x $2> %cmp,
   ',LLVM_VERSION,LLVM_7_0,`
     %r_LANE_ID_t = cmpxchg $2 * %ptr, $2 %cmp_LANE_ID, $2 %val_LANE_ID seq_cst seq_cst
     %r_LANE_ID = extractvalue { $2, i1 } %r_LANE_ID_t, 0
+  ',LLVM_VERSION,LLVM_7_1,`
+    %r_LANE_ID_t = cmpxchg $2 * %ptr, $2 %cmp_LANE_ID, $2 %val_LANE_ID seq_cst seq_cst
+    %r_LANE_ID = extractvalue { $2, i1 } %r_LANE_ID_t, 0
   ',LLVM_VERSION,LLVM_8_0,`
+    %r_LANE_ID_t = cmpxchg $2 * %ptr, $2 %cmp_LANE_ID, $2 %val_LANE_ID seq_cst seq_cst
+    %r_LANE_ID = extractvalue { $2, i1 } %r_LANE_ID_t, 0
+  ',LLVM_VERSION,LLVM_9_0,`
     %r_LANE_ID_t = cmpxchg $2 * %ptr, $2 %cmp_LANE_ID, $2 %val_LANE_ID seq_cst seq_cst
     %r_LANE_ID = extractvalue { $2, i1 } %r_LANE_ID_t, 0
   ',`
@@ -1643,7 +1661,7 @@ define <$1 x $2> @__atomic_compare_exchange_$3_global($2* %ptr, <$1 x $2> %cmp,
 
 define $2 @__atomic_compare_exchange_uniform_$3_global($2* %ptr, $2 %cmp,
                                                        $2 %val) nounwind alwaysinline {                                                           
-  ;; 3.5, 3.6, 3.7, 3.8 and 3.9 code is the same since m4 has no OR and AND operators
+  ;; 3.5 - trunk code is the same since m4 has no OR and AND operators
   ifelse(LLVM_VERSION,LLVM_3_5,`
    %r_t = cmpxchg $2 * %ptr, $2 %cmp, $2 %val seq_cst seq_cst
    %r = extractvalue { $2, i1 } %r_t, 0
@@ -1671,7 +1689,13 @@ define $2 @__atomic_compare_exchange_uniform_$3_global($2* %ptr, $2 %cmp,
   ',LLVM_VERSION,LLVM_7_0,`
    %r_t = cmpxchg $2 * %ptr, $2 %cmp, $2 %val seq_cst seq_cst
    %r = extractvalue { $2, i1 } %r_t, 0
+  ',LLVM_VERSION,LLVM_7_1,`
+   %r_t = cmpxchg $2 * %ptr, $2 %cmp, $2 %val seq_cst seq_cst
+   %r = extractvalue { $2, i1 } %r_t, 0
   ',LLVM_VERSION,LLVM_8_0,`
+   %r_t = cmpxchg $2 * %ptr, $2 %cmp, $2 %val seq_cst seq_cst
+   %r = extractvalue { $2, i1 } %r_t, 0
+  ',LLVM_VERSION,LLVM_9_0,`
    %r_t = cmpxchg $2 * %ptr, $2 %cmp, $2 %val seq_cst seq_cst
    %r = extractvalue { $2, i1 } %r_t, 0
   ',`

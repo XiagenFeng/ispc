@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2018, Intel Corporation
+#  Copyright (c) 2018-2019, Intel Corporation
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -50,6 +50,7 @@ option(ISPC_INCLUDE_EXAMPLES "Generate build targets for the ISPC examples" ON)
 option(ISPC_INCLUDE_TESTS "Generate build targets for the ISPC tests." ON)
 option(ISPC_INCLUDE_UTILS "Generate build targets for the utils." ON)
 option(ISPC_PREPARE_PACKAGE "Generate build targets for ispc package" OFF)
+option(ISPC_NO_DUMPS "Turn off functionality, which requires LLVM dump() functions" OFF)
 
 if (UNIX)
     option(ISPC_STATIC_STDCXX_LINK "Link statically with libstdc++ and libgcc" OFF)
@@ -86,42 +87,38 @@ find_package(PythonInterp 2.7 REQUIRED)
 
 find_package(BISON 2.4 REQUIRED)
     if (BISON_FOUND)
-        set(BISON_INPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/parse.yy)
+        set(BISON_INPUT src/parse.yy)
         set(BISON_CPP_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.cc)
         set(BISON_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.hh
                          ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.output)
-        if (WIN32)
-            win_path_to_cygwin(${BISON_INPUT} ${BISON_EXECUTABLE} BISON_INPUT)
-        endif()
         add_custom_command (
             OUTPUT ${BISON_CPP_OUTPUT} ${BISON_OUTPUT}
             COMMAND ${BISON_EXECUTABLE} -d -t -v
                 --output=${BISON_CPP_OUTPUT}
                 ${BISON_INPUT}
             COMMENT "Generating parse.cc"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
     endif()
 
 find_package(FLEX 2.5 REQUIRED)
     if (FLEX_FOUND)
-        set(FLEX_INPUT  ${CMAKE_CURRENT_SOURCE_DIR}/src/lex.ll)
+        set(FLEX_INPUT  src/lex.ll)
         set(FLEX_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/lex.cpp)
-        if (WIN32)
-            win_path_to_cygwin(${FLEX_INPUT} ${FLEX_EXECUTABLE} FLEX_INPUT)
-        endif()
         add_custom_command(
             OUTPUT ${FLEX_OUTPUT}
             COMMAND ${FLEX_EXECUTABLE}
                 --outfile=${FLEX_OUTPUT}
                 ${FLEX_INPUT}
             COMMENT "Generating lex.cpp"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         )
     endif()
 
 set (ISPC_MASKS 1 8 16 32 64)
 set (ISPC_TARGETS avx2-i64x4 avx11-i64x4 avx1-i64x4 avx1 avx1-x2 avx11 avx11-x2 avx2 avx2-x2
     sse2 sse2-x2 sse4-8 sse4-16 sse4 sse4-x2
-    generic-4 generic-8 generic-16 generic-32 generic-64 generic-1 knl skx)
+    generic-4 generic-8 generic-16 generic-32 generic-64 generic-1 knl skx skx-8)
 
 set(CLANG_LIBRARY_LIST clangFrontend clangDriver clangSerialization clangParse clangSema clangAnalysis clangAST clangBasic clangEdit clangLex)
 set(LLVM_COMPONENTS engine ipo bitreader bitwriter instrumentation linker)
@@ -211,6 +208,10 @@ if (NVPTX_ENABLED)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_NVPTX_ENABLED)
 endif()
 
+if (ISPC_NO_DUMPS)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_NO_DUMPS)
+endif()
+
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
                            ${LLVM_INCLUDE_DIRS}
@@ -219,9 +220,14 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # Compile options
 if (UNIX)
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wno-sign-compare -Wno-unused-function -Werror ${LLVM_CPP_FLAGS})
+    # Security options
+    target_compile_options(${PROJECT_NAME} PRIVATE -fstack-protector -fdata-sections -ffunction-sections
+                           -Wformat -Wformat-security -fpie -fwrapv)
     set_source_files_properties("src/cbackend.cpp" PROPERTIES COMPILE_FLAGS "-fno-exceptions")
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE /W3 /wd4146 /wd4800 /wd4996 /wd4355 /wd4624 /wd4244 /wd4141 /wd4291 /wd4018)
+    # Security options
+    target_compile_options(${PROJECT_NAME} PRIVATE /GS /DynamicBase)
     set_source_files_properties(${FLEX_OUTPUT} PROPERTIES COMPILE_FLAGS "/wd4005 /wd4003")
     set_source_files_properties(${BISON_OUTPUT} PROPERTIES COMPILE_FLAGS "/wd4005 /wd4065")
 endif()
@@ -242,6 +248,10 @@ if (WIN32)
     if (NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
         set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/OPT:REF /OPT:ICF")
     endif()
+elseif (APPLE)
+else()
+    # Link options for security hardening.
+    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-z noexecstack -z relro -z now -Wl,--gc-sections")
 endif()
 
 if (ISPC_STATIC_STDCXX_LINK)
@@ -296,14 +306,14 @@ if (ISPC_INCLUDE_EXAMPLES AND NOT ISPC_PREPARE_PACKAGE)
     add_subdirectory(examples)
 endif()
 
-if (ISPC_INCLUDE_TESTS AND NOT ISPC_PREPARE_PACKAGE)
+if (ISPC_INCLUDE_TESTS)
     add_subdirectory(tests)
 endif()
 
 # Install
 install (TARGETS ${PROJECT_NAME} DESTINATION bin)
 if (ISPC_PREPARE_PACKAGE)
-    install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION examples)
+    install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION examples PATTERN "portable" EXCLUDE)
     install (DIRECTORY "${PROJECT_SOURCE_DIR}/contrib/" DESTINATION contrib)
     install (FILES "${PROJECT_SOURCE_DIR}/LICENSE.txt" DESTINATION .)
     install (FILES "${PROJECT_SOURCE_DIR}/docs/ReleaseNotes.txt" DESTINATION .)
@@ -328,8 +338,14 @@ if (ISPC_PREPARE_PACKAGE)
     # CPack configuration
     if (WIN32)
         set(CPACK_GENERATOR "ZIP")
+        set(ISPC_SYSTEM_NAME "windows")
     else()
         set(CPACK_GENERATOR "TGZ")
+        if (APPLE)
+            set(ISPC_SYSTEM_NAME "macOS")
+        else()
+            set(ISPC_SYSTEM_NAME "linux")
+        endif()
     endif()
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
     # Get ispc version
@@ -338,5 +354,10 @@ if (ISPC_PREPARE_PACKAGE)
     set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
     set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
     set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_MATCH_3})
+    string(CONCAT CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}"
+                             "-v${CPACK_PACKAGE_VERSION_MAJOR}"
+                             ".${CPACK_PACKAGE_VERSION_MINOR}"
+                             ".${CPACK_PACKAGE_VERSION_PATCH}"
+                             "-${ISPC_SYSTEM_NAME}")
     include(CPack)
 endif()

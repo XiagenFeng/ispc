@@ -56,6 +56,7 @@ Contents:
   + `Updating ISPC Programs For Changes In ISPC 1.9.1`_
   + `Updating ISPC Programs For Changes In ISPC 1.9.2`_
   + `Updating ISPC Programs For Changes In ISPC 1.10.0`_
+  + `Updating ISPC Programs For Changes In ISPC 1.11.0`_
 
 * `Getting Started with ISPC`_
 
@@ -372,6 +373,19 @@ and a "#pragma ignore".
 One change that potentially may affect compatibility - changed size of short vector
 types. If you use short vector types for data passed between C/C++ and ISPC, you
 may want to pay attention to it.
+
+Updating ISPC Programs For Changes In ISPC 1.11.0
+-------------------------------------------------
+
+This release redefined -O1 compiler option to optimize for size, so it may require
+adjusting your build system accordingly.
+
+Starting 1.11.0 version auto-generated headers use ``#pragma once``. In the unlikely
+case when your C/C++ compiler is not supporting that, please use ``--no-pragma-once``
+``ispc`` switch.
+
+This release also introduces new AVX512 target avx512skx-i32x8. It produces code,
+which doesn't use ZMM registers.
 
 
 Getting Started with ISPC
@@ -3463,14 +3477,14 @@ non-short-circuiting logical AND and OR operations.
     uniform bool or(uniform bool a, uniform bool b)
 
 And there are three variants of ``select()`` that select between two values
-based on a boolean condition.  These are the variants of ``select()`` for
-the ``int8`` type:
+based on a boolean condition.  If condition ``cond`` is true, ``t`` is selected,
+otherwise ``f``. These are the variants of ``select()`` for the ``int8`` type:
 
 ::
 
-    int8 select(bool v, int8 a, int8 b)
-    int8 select(uniform bool v, int8 a, int8 b)
-    uniform int8 select(uniform bool v, uniform int8 a, uniform int8 b)
+    int8 select(bool cond, int8 t, int8 f)
+    int8 select(uniform bool cond, int8 t, int8 f)
+    uniform int8 select(uniform bool cond, uniform int8 t, uniform int8 f)
 
 There are also variants for ``int16``, ``int32``, ``int64``, ``float``, and
 ``double`` types.
@@ -5295,7 +5309,7 @@ countries.
 
 * Other names and brands may be claimed as the property of others.
 
-Copyright(C) 2011-2018, Intel Corporation. All rights reserved.
+Copyright(C) 2011-2019, Intel Corporation. All rights reserved.
 
 
 Optimization Notice
