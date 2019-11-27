@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2012, Intel Corporation
+  Copyright (c) 2010-2019, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -57,11 +57,11 @@ extern void RegisterDependency(const std::string &fileName);
     yylloc.first_column = yylloc.last_column; \
     yylloc.last_column += yyleng;
 
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
 inline int isatty(int) { return 0; }
 #else
 #include <unistd.h>
-#endif // ISPC_IS_WINDOWS
+#endif // ISPC_HOST_IS_WINDOWS
 
 static int allTokens[] = {
   TOKEN_ASSERT, TOKEN_BOOL, TOKEN_BREAK, TOKEN_CASE,
@@ -86,7 +86,7 @@ static int allTokens[] = {
   TOKEN_GE_OP, TOKEN_EQ_OP, TOKEN_NE_OP, TOKEN_AND_OP, TOKEN_OR_OP,
   TOKEN_MUL_ASSIGN, TOKEN_DIV_ASSIGN, TOKEN_MOD_ASSIGN, TOKEN_ADD_ASSIGN,
   TOKEN_SUB_ASSIGN, TOKEN_LEFT_ASSIGN, TOKEN_RIGHT_ASSIGN, TOKEN_AND_ASSIGN,
-  TOKEN_XOR_ASSIGN, TOKEN_OR_ASSIGN, TOKEN_PTR_OP,
+  TOKEN_XOR_ASSIGN, TOKEN_OR_ASSIGN, TOKEN_PTR_OP, TOKEN_NOINLINE,
   ';', '{', '}', ',', ':', '=', '(', ')', '[', ']', '.', '&', '!', '~', '-',
   '+', '*', '/', '%', '<', '>', '^', '|', '?',
 };
@@ -124,6 +124,7 @@ void ParserInit() {
     tokenToName[TOKEN_IF] = "if";
     tokenToName[TOKEN_IN] = "in";
     tokenToName[TOKEN_INLINE] = "inline";
+    tokenToName[TOKEN_NOINLINE] = "noinline";
     tokenToName[TOKEN_INT] = "int";
     tokenToName[TOKEN_INT8] = "int8";
     tokenToName[TOKEN_INT16] = "int16";
@@ -239,6 +240,7 @@ void ParserInit() {
     tokenNameRemap["TOKEN_IF"] = "\'if\'";
     tokenNameRemap["TOKEN_IN"] = "\'in\'";
     tokenNameRemap["TOKEN_INLINE"] = "\'inline\'";
+    tokenNameRemap["TOKEN_NOINLINE"] = "\'noinline\'";
     tokenNameRemap["TOKEN_INT"] = "\'int\'";
     tokenNameRemap["TOKEN_INT8"] = "\'int8\'";
     tokenNameRemap["TOKEN_INT16"] = "\'int16\'";
@@ -303,7 +305,7 @@ void ParserInit() {
 
 
 inline int ispcRand() {
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
     return rand();
 #else
     return lrand48();
@@ -392,6 +394,7 @@ goto { RT; return TOKEN_GOTO; }
 if { RT; return TOKEN_IF; }
 in { RT; return TOKEN_IN; }
 inline { RT; return TOKEN_INLINE; }
+noinline { RT; return TOKEN_NOINLINE; }
 int { RT; return TOKEN_INT; }
 int8 { RT; return TOKEN_INT8; }
 int16 { RT; return TOKEN_INT16; }
@@ -580,7 +583,7 @@ lParseInteger(bool dotdotdot) {
     if (yytext[0] == '0' && yytext[1] == 'b')
         yylval.intVal = lParseBinary(yytext+2, yylloc, &endPtr);
     else {
-#if defined(ISPC_IS_WINDOWS) && !defined(__MINGW32__)
+#if defined(ISPC_HOST_IS_WINDOWS) && !defined(__MINGW32__)
         yylval.intVal = _strtoui64(yytext, &endPtr, 0);
 #else
         // FIXME: should use strtouq and then issue an error if we can't

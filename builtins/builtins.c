@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2013, Intel Corporation
+  Copyright (c) 2010-2019, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -62,7 +62,14 @@
 #endif
 
 #ifndef _MSC_VER
+// In unistd.h we need the definition of sysconf and _SC_NPROCESSORS_ONLN used as its arguments.
+// We should include unistd.h, but it doesn't really work well for cross compilation, as
+// requires us to carry around unistd.h, which is not available on Windows out of the box.
 #include <unistd.h>
+
+// Just for the reference: these lines are eventually included from unistd.h
+// #define _SC_NPROCESSORS_ONLN 58
+// long sysconf(int);
 #endif // !_MSC_VER
 
 #include <stdarg.h>
@@ -196,6 +203,7 @@ done:
     fflush(stdout);
 }
 
+#ifdef ISPC_NVPTX_ENABLED
 /* this is print for PTX target only */
 int __puts_nvptx(const char *);
 void __do_print_nvptx(const char *format, const char *types, int width, uint64_t mask, void **args) {
@@ -269,6 +277,7 @@ void __do_print_nvptx(const char *format, const char *types, int width, uint64_t
     __puts_nvptx("---nvptx printing is not support---\n");
 #endif
 }
+#endif
 
 int __num_cores() {
 #if defined(_MSC_VER) || defined(__MINGW32__)

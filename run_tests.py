@@ -1,6 +1,6 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 #
-#  Copyright (c) 2013-2018, Intel Corporation
+#  Copyright (c) 2013-2019, Intel Corporation
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -46,36 +46,6 @@ def update_progress(fn, total_tests_arg, counter, max_test_length_arg):
         sys.stdout.write(progress_str)
         sys.stdout.flush()
 
-# This is workaround for missing timeout functionality in Python 2.7.
-class RunWithTimeout(object):
-    def __init__(self, cmd):
-        self.cmd = cmd
-        self.process = None
-        self.output = ""
-
-    def run(self, timeout):
-        def target():
-            try:
-                self.process = subprocess.Popen(self.cmd, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            except:
-                print_debug("ERROR: The child (%s) raised an exception: %s\n" % (cmd, sys.exc_info()[1]), s, run_tests_log)
-                raise
-
-            out = self.process.communicate()
-            self.output += out[0].decode("utf-8")
-            self.output += out[1].decode("utf-8")
-
-        thread = threading.Thread(target=target)
-        thread.start()
-
-        timeout_fail = False
-        thread.join(timeout)
-        if thread.is_alive():
-            timeout_fail = True
-            self.process.terminate()
-            thread.join()
-        return (self.process.returncode, self.output, timeout_fail)
-
 # 240 is enough even for longest test under sde.
 def run_command(cmd, timeout=600):
     if options.verbose:
@@ -91,10 +61,29 @@ def run_command(cmd, timeout=600):
     lexer.escape = ''
     arg_list = list(lexer)
 
-    run = RunWithTimeout(cmd=arg_list)
-    (ret_code, output, is_timeout) = run.run(timeout)
+    # prepare for OSError exceptions raised in the child process (re-raised in the parent)
+    try:
+        proc = subprocess.Popen(arg_list, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except:
+        print_debug("ERROR: The child (%s) raised an exception: %s\n" % (arg_list, sys.exc_info()[1]), s, run_tests_log)
+        raise
 
-    return (ret_code, output, is_timeout)
+    is_timeout = False
+    # read data from stdout and stderr
+    try:
+        out = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out = proc.communicate()
+        is_timeout = True
+    except:
+        print_debug("ERROR: The child (%s) raised an exception: %s\n" % (arg_list, sys.exc_info()[1]), s, run_tests_log)
+        raise
+
+    output = ""
+    output += out[0].decode("utf-8")
+    output += out[1].decode("utf-8")
+    return (proc.returncode, output, is_timeout)
 
 # run the commands in cmd_list
 def run_cmds(compile_cmds, run_cmd, filename, expect_failure):
@@ -104,7 +93,7 @@ def run_cmds(compile_cmds, run_cmd, filename, expect_failure):
         if compile_failed:
             print_debug("Compilation of test %s failed %s           \n" % (filename, "due to TIMEOUT" if timeout else ""), s, run_tests_log)
             if output != "":
-                print_debug("%s" % output.encode("utf-8"), s, run_tests_log)
+                print_debug("%s" % output, s, run_tests_log)
             return (1, 0)
     if not options.save_bin:
         (return_code, output, timeout) = run_command(run_cmd)
@@ -117,8 +106,8 @@ def run_cmds(compile_cmds, run_cmd, filename, expect_failure):
         print_debug("Test %s %s (return code %d)            \n" % \
             (filename, "unexpectedly passed" if expect_failure else "failed",
              return_code), s, run_tests_log)
-    if output != "":
-        print_debug("%s\n" % output.encode("utf-8"), s, run_tests_log)
+    if output:
+        print_debug("%s\n" % output, s, run_tests_log)
     if surprise == True:
         return (0, 1)
     else:
@@ -148,7 +137,8 @@ def check_test(filename):
         oss = "windows"
     else:
         oss = "linux"
-    b = buffer(file(add_prefix(filename)).read());
+    with open(add_prefix(filename)) as f:
+        b = f.read()
     for run in re.finditer('// *rule: run on .*', b):
         arch = re.match('.* arch=.*', run.group())
         if arch != None:
@@ -183,15 +173,8 @@ def run_test(testname):
     # is this a test to make sure an error is issued?
     want_error = (filename.find("tests_errors") != -1)
     if want_error == True:
-        if (options.target == "knc-generic"):
-            ispc_cmd = ispc_exe_rel + " --werror --nowrap %s --arch=%s --target=%s" % \
-                (filename, options.arch, "generic-16")
-        elif (options.target == "knl-generic"):
-            ispc_cmd = ispc_exe_rel + " --werror --nowrap %s --arch=%s --target=%s" % \
-                (filename, options.arch, "generic-16")
-        else:
-            ispc_cmd = ispc_exe_rel + " --werror --nowrap %s --arch=%s --target=%s" % \
-                (filename, options.arch, options.target)
+        ispc_cmd = ispc_exe_rel + " --werror --nowrap %s --arch=%s --target=%s" % \
+            (filename, options.arch, options.target)
         (return_code, output, timeout) = run_command(ispc_cmd, 10)
         got_error = (return_code != 0) or timeout
 
@@ -267,33 +250,21 @@ def run_test(testname):
 
                 if options.arch == 'arm':
                      gcc_arch = '--with-fpu=hardfp -marm -mfpu=neon -mfloat-abi=hard'
+                elif options.arch == 'x86':
+                    gcc_arch = '-m32'
+                elif options.arch == 'aarch64':
+                    gcc_arch = '-march=armv8-a -target aarch64-linux-gnueabi --static'
                 else:
-                    if options.arch == 'x86':
-                        gcc_arch = '-m32'
-                    else:
-                        gcc_arch = '-m64'
+                    gcc_arch = '-m64'
 
                 gcc_isa=""
                 if options.target == 'generic-4':
                     gcc_isa = '-msse4.2'
                 if (options.target == 'generic-8'):
-                  if (options.include_file.find("knc-i1x8.h")!=-1 or options.include_file.find("knc-i1x8unsafe_fast.h")!=-1):
-                    gcc_isa = '-mmic'
-                  else:
                     gcc_isa = '-mavx'
-                if (options.target == 'generic-16' or options.target == 'generic-32' or options.target == 'generic-64') \
-                        and (options.include_file.find("knc-i1x16.h")!=-1 or options.include_file.find("knc.h")!=-1 or options.include_file.find("knc2x.h")!=-1):
-                    gcc_isa = '-mmic'
 
-                if (options.target == "knc-generic"):
-                    cc_cmd = "%s -O2 -I. %s %s test_static.cpp -DTEST_SIG=%d %s -o %s" % \
-                         (options.compiler_exe, gcc_arch, "-mmic", match, obj_name, exe_name)
-                elif (options.target == "knl-generic"):
-                    cc_cmd = "%s -O2 -I. %s %s test_static.cpp -DTEST_SIG=%d %s -o %s" % \
-                         (options.compiler_exe, gcc_arch, "-xMIC-AVX512", match, obj_name, exe_name)
-                else:
-                    cc_cmd = "%s -O2 -I. %s %s test_static.cpp -DTEST_SIG=%d %s -o %s" % \
-                         (options.compiler_exe, gcc_arch, gcc_isa, match, obj_name, exe_name)
+                cc_cmd = "%s -O2 -I. %s %s test_static.cpp -DTEST_SIG=%d %s -o %s" % \
+                    (options.compiler_exe, gcc_arch, gcc_isa, match, obj_name, exe_name)
 
                 if platform.system() == 'Darwin':
                     cc_cmd += ' -Wl,-no_pie'
@@ -306,18 +277,8 @@ def run_test(testname):
                   cc_cmd = "%s %s -DTEST_SIG=%d -o %s" % \
                       (nvptxcc_exe_rel, obj_name, match, exe_name)
 
-            ispc_cmd = ispc_exe_rel + " --woff %s -o %s -O3 --arch=%s --target=%s" % \
-                       (filename, obj_name, options.arch, options.target)
-
-            if (options.target == "knc-generic"):
-                ispc_cmd = ispc_exe_rel + " --woff %s -o %s --arch=%s --target=%s" % \
-                           (filename, obj_name, options.arch, "generic-16")
-            elif (options.target == "knl-generic"):
-                ispc_cmd = ispc_exe_rel + " --woff %s -o %s --arch=%s --target=%s" % \
-                           (filename, obj_name, options.arch, "generic-16")
-            else:
-                ispc_cmd = ispc_exe_rel + " --woff %s -o %s --arch=%s --target=%s" % \
-                           (filename, obj_name, options.arch, options.target)
+            ispc_cmd = ispc_exe_rel + " --woff %s -o %s --arch=%s --target=%s" % \
+                        (filename, obj_name, options.arch, options.target)
 
             if options.no_opt:
                 ispc_cmd += " -O0"
@@ -330,7 +291,7 @@ def run_test(testname):
                 grep_cmd = "sed  's/export\ uniform\ int\ width/static uniform\ int\ width/g' %s > %s" % \
                     (filename, filename4ptx)
                 if options.verbose:
-                  print "Grepping: %s" % grep_cmd
+                  print("Grepping: %s" % grep_cmd)
                 sp = subprocess.Popen(grep_cmd, shell=True)
                 sp.communicate()
                 if is_nvptx_nvvm:
@@ -570,6 +531,7 @@ def file_check(compfails, runfails):
         output.close()
     return [new_runfails, new_compfails, new_passes_runfails, new_passes_compfails, new_line, errors]
 
+# TODO: This function is out of date, it needs update and test coverage.
 def verify():
     # Open file fail_db.txt
     f = open(test_states, 'r')
@@ -577,11 +539,13 @@ def verify():
     f.close()
     check = [["g++", "clang++", "cl"],["-O0", "-O2"],["x86","x86-64"],
              ["Linux","Windows","Mac"],["LLVM 3.2","LLVM 3.3","LLVM 3.4","LLVM 3.5","LLVM 3.6","LLVM trunk"],
-             ["sse2-i32x4", "sse2-i32x8", "sse4-i32x4", "sse4-i32x8", "sse4-i16x8",
-              "sse4-i8x16", "avx1-i32x4" "avx1-i32x8", "avx1-i32x16", "avx1-i64x4", "avx1.1-i32x8",
-              "avx1.1-i32x16", "avx1.1-i64x4", "avx2-i32x8", "avx2-i32x16", "avx2-i64x4",
+             ["sse2-i32x4", "sse2-i32x8",
+              "sse4-i32x4", "sse4-i32x8", "sse4-i16x8", "sse4-i8x16",
+              "avx1-i32x4", "avx1-i32x8", "avx1-i32x16", "avx1-i64x4",
+              "avx2-i32x4", "avx2-i32x8", "avx2-i32x16", "avx2-i64x4",
               "generic-1", "generic-4", "generic-8",
-              "generic-16", "generic-32", "generic-64", "knc-generic", "knl-generic", "avx512knl-i32x16"]]
+              "generic-16", "generic-32", "generic-64",
+              "avx512knl-i32x16", "avx512skx-i32x16", "avx512skx-i32x8"]]
     for i in range (0,len(f_lines)):
         if f_lines[i][0] == "%":
             continue
@@ -626,7 +590,7 @@ def run_tests(options1, args, print_version):
                 'CYGWIN_NT' in platform.system())
 
     if options.target == 'neon':
-        options.arch = 'arm'
+        options.arch = 'aarch64'
     if options.target == "nvptx":
         options.arch = "nvptx64"
 
@@ -638,7 +602,7 @@ def run_tests(options1, args, print_version):
     if os.environ.get("ISPC_HOME") != None:
         if os.path.exists(os.environ["ISPC_HOME"] + os.sep + "ispc" + ispc_ext):
             ispc_exe = os.environ["ISPC_HOME"] + os.sep + "ispc" + ispc_ext
-    PATH_dir = string.split(os.getenv("PATH"), os.pathsep)
+    PATH_dir = os.environ["PATH"].split(os.pathsep)
     for counter in PATH_dir:
         if ispc_exe == "":
             if os.path.exists(counter + os.sep + "ispc" + ispc_ext):
@@ -657,8 +621,7 @@ def run_tests(options1, args, print_version):
 
     global is_generic_target
     is_generic_target = ((options.target.find("generic-") != -1 and
-                     options.target != "generic-1" and options.target != "generic-x1") or
-                     options.target == "knc-generic" or options.target == "knl-generic")
+                     options.target != "generic-1" and options.target != "generic-x1"))
 
     global is_nvptx_target
     is_nvptx_target = (options.target.find("nvptx") != -1)
@@ -683,25 +646,15 @@ def run_tests(options1, args, print_version):
             error("No generics #include specified; using examples/intrinsics/generic-64.h\n", 2)
             options.include_file = "examples/intrinsics/generic-64.h"
             options.target = "generic-64"
-        elif options.target == "knc-generic":
-            error("No knc #include specified; using examples/intrinsics/knc.h\n", 2)
-            options.include_file = "examples/intrinsics/knc.h"
-        elif options.target == "knl-generic":
-            error("No knl #include specified; using examples/intrinsics/knl.h\n", 2)
-            options.include_file = "examples/intrinsics/knl.h"
 
     if options.compiler_exe == None:
-        if (options.target == "knc-generic"):
-            options.compiler_exe = "icpc"
-        elif (options.target == "knl-generic"):
-            options.compiler_exe = "icpc"
-        elif is_windows:
+        if is_windows:
             options.compiler_exe = "cl.exe"
         else:
             options.compiler_exe = "clang++"
 
     # checks the required compiler otherwise prints an error message
-    PATH_dir = string.split(os.getenv("PATH"), os.pathsep)
+    PATH_dir = os.environ["PATH"].split(os.pathsep)
     compiler_exists = False
 
     for counter in PATH_dir:
@@ -718,29 +671,6 @@ def run_tests(options1, args, print_version):
 
     ispc_root = "."
 
-    # checks the required environment otherwise prints an error message
-    if (options.target == "knc-generic"):
-        options.wrapexe = "micnativeloadex"
-        PATH_dir = string.split(os.getenv("PATH"), os.pathsep)
-        wrapexe_exists = False
-        for counter in PATH_dir:
-            if os.path.exists(counter + os.sep + options.wrapexe):
-                wrapexe_exists = True
-                break
-
-        if not wrapexe_exists:
-            error("missing the required launcher: %s \nAdd it to your $PATH\n" % options.wrapexe, 1)
-
-        if platform.system() == 'Windows' or 'CYGWIN_NT' in platform.system():
-            OS = "Windows"
-        else:
-            if platform.system() == 'Darwin':
-                OS = "Mac"
-            else:
-                OS = "Linux"
-
-        if not (OS  == 'Linux'):
-            error ("knc-generic target is supported only on Linux", 1)
     # if no specific test files are specified, run all of the tests in tests/,
     # failing_tests/, and tests_errors/
     if len(args) == 0:
@@ -758,7 +688,7 @@ def run_tests(options1, args, print_version):
 
         files = [ ]
         for f in argfiles:
-            if os.path.splitext(string.lower(f))[1] != ".ispc":
+            if os.path.splitext(f.lower())[1] != ".ispc":
                 error("Ignoring file %s, which doesn't have an .ispc extension.\n" % f, 2)
             else:
                 files += [ f ]
@@ -910,7 +840,6 @@ import glob
 import re
 import signal
 import random
-import string
 import threading
 import subprocess
 import shlex
@@ -933,12 +862,9 @@ if __name__ == "__main__":
     parser.add_option("-f", "--ispc-flags", dest="ispc_flags", help="Additional flags for ispc (-g, -O1, ...)",
                   default="")
     parser.add_option('-t', '--target', dest='target',
-                  help=('Set compilation target (sse2-i32x4, sse2-i32x8, sse4-i32x4, sse4-i32x8, ' +
-                  'sse4-i16x8, sse4-i8x16, avx1-i32x8, avx1-i32x16, avx1.1-i32x8, avx1.1-i32x16, ' +
-                  'avx2-i32x8, avx2-i32x16, avx512knl-i32x16, generic-x1, generic-x4, generic-x8, generic-x16, ' +
-                  'generic-x32, generic-x64, knc-generic, knl-generic)'), default="sse4")
+                  help=('Set compilation target. For example: sse4-i32x4, avx2-i32x8, avx512skx-i32x16, etc.'), default="sse4-i32x4")
     parser.add_option('-a', '--arch', dest='arch',
-                  help='Set architecture (arm, x86, x86-64)',default="x86-64")
+                  help='Set architecture (arm, aarch64, x86, x86-64)',default="x86-64")
     parser.add_option("-c", "--compiler", dest="compiler_exe", help="C/C++ compiler binary to use to run tests",
                   default=None)
     parser.add_option('-o', '--no-opt', dest='no_opt', help='Disable optimization',

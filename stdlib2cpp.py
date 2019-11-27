@@ -1,10 +1,10 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 
 import sys
 
 t=str(sys.argv[1])
 
-sys.stdout.write("char stdlib_" + t + "_code[] = {\n")
+sys.stdout.write("extern const char stdlib_" + t + "_code[] = {\n")
 
 width = 16
 data = sys.stdin.read()

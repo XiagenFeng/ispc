@@ -45,14 +45,11 @@
 #endif
 
 #if defined(_WIN32) || defined(_WIN64)
-#define ISPC_IS_WINDOWS
+#define ISPC_HOST_IS_WINDOWS
 #elif defined(__linux__)
-#define ISPC_IS_LINUX
+#define ISPC_HOST_IS_LINUX
 #elif defined(__APPLE__)
-#define ISPC_IS_APPLE
-#endif
-#if defined(__KNC__)
-#define ISPC_IS_KNC
+#define ISPC_HOST_IS_APPLE
 #endif
 
 #include <map>
@@ -119,6 +116,11 @@ struct VariableDeclaration;
 
 enum StorageClass { SC_NONE, SC_EXTERN, SC_STATIC, SC_TYPEDEF, SC_EXTERN_C };
 
+enum TargetOS { OS_WINDOWS, OS_LINUX, OS_MAC, OS_ANDROID, OS_IOS, OS_PS4, OS_ERROR };
+
+TargetOS StringToOS(std::string);
+constexpr TargetOS GetHostOS();
+
 /** @brief Representation of a range of positions in a source file.
 
     This class represents a range of characters in a source file
@@ -178,7 +180,8 @@ class Target {
         SSE2 = 0,
         SSE4 = 1,
         AVX = 2,
-        AVX11 = 3,
+        // Not supported anymore. Use either AVX or AVX2.
+        // AVX11 = 3,
         AVX2 = 4,
         KNL_AVX512 = 5,
         SKX_AVX512 = 6,
@@ -205,6 +208,10 @@ class Target {
     static const char *SupportedTargets();
 
     /** Returns a comma-delimited string giving the names of the currently
+     *  supported target OSes */
+    static const char *SupportedOSes();
+
+    /** Returns a comma-delimited string giving the names of the currently
         supported CPUs. */
     static std::string SupportedCPUs();
 
@@ -229,7 +236,7 @@ class Target {
     /** Convert ISA enum to string */
     static const char *ISAToTargetString(Target::ISA isa);
 
-    /** Returns a string like "avx1.1-i32x8" encoding the target.
+    /** Returns a string like "avx2-i32x8" encoding the target.
         This may be used for Target initialization. */
     const char *GetISATargetString() const;
 
@@ -536,6 +543,9 @@ struct Globals {
     /** Compilation target information */
     Target *target;
 
+    /** Target OS */
+    TargetOS target_os;
+
     /** There are a number of math libraries that can be used for
         transcendentals and the like during program compilation. */
     enum MathLib { Math_ISPC, Math_ISPCFast, Math_SVML, Math_System };
@@ -565,6 +575,9 @@ struct Globals {
 
     /** Indicates which stages of optimization we want to dump. */
     std::set<int> debug_stages;
+
+    /** Whether to dump IR to file. */
+    bool dumpFile;
 
     /** Indicates after which optimization we want to generate
         DebugIR information. */

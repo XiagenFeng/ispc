@@ -44,7 +44,7 @@
 #include <intrin.h>
 #endif
 
-#if !defined(__arm__)
+#if !defined(__arm__) && !defined(__aarch64__)
 #if !defined(ISPC_IS_WINDOWS)
 static void __cpuid(int info[4], int infoType) {
     __asm__ __volatile__("cpuid" : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3]) : "0"(infoType));
@@ -93,7 +93,7 @@ static bool __os_has_avx512_support() {
 #endif // !__arm__
 
 static const char *lGetSystemISA() {
-#ifdef __arm__
+#if defined(__arm__) || defined(__aarch64__)
     return "ARM NEON";
 #else
     int info[4];
@@ -135,6 +135,8 @@ static const char *lGetSystemISA() {
             if ((info2[1] & (1 << 5)) != 0) {
                 return "AVX2 (codename Haswell)";
             } else {
+                // Ivy Bridge specific target was depricated in ISPC, but
+                // no harm detecting it in standalone tool.
                 return "AVX1.1 (codename Ivy Bridge)";
             }
         }

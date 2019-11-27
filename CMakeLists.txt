@@ -33,7 +33,7 @@
 #
 # ispc CMakeLists.txt
 #
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.12)
 
 if (UNIX)
     set(CMAKE_C_COMPILER "clang")
@@ -44,13 +44,51 @@ set(PROJECT_NAME ispc)
 set(ISPC_BUILD TRUE)
 project(${PROJECT_NAME})
 
-option(ARM_ENABLED "Enable ARM support" OFF)
+option(ARM_ENABLED "Enable ARM support" ON)
 option(NVPTX_ENABLED "Enable NVPTX support" OFF)
 option(ISPC_INCLUDE_EXAMPLES "Generate build targets for the ISPC examples" ON)
 option(ISPC_INCLUDE_TESTS "Generate build targets for the ISPC tests." ON)
 option(ISPC_INCLUDE_UTILS "Generate build targets for the utils." ON)
 option(ISPC_PREPARE_PACKAGE "Generate build targets for ispc package" OFF)
 option(ISPC_NO_DUMPS "Turn off functionality, which requires LLVM dump() functions" OFF)
+
+option(ISPC_CROSS "Build ISPC with cross compilation support" OFF)
+# Default settings for cross compilation
+if (ISPC_CROSS)
+    option(ISPC_WINDOWS_TARGET "Build ISPC with windows target support" ON)
+    option(ISPC_LINUX_TARGET "Build ISPC with linux target support" ON)
+    option(ISPC_MACOS_TARGET "Build ISPC with macos target support" ON)
+    option(ISPC_IOS_TARGET "Build ISPC with ios target support" ON)
+    option(ISPC_ANDROID_TARGET "Build ISPC with android target support" ON)
+    option(ISPC_PS4_TARGET "Build ISPC with ps4 target support" ON)
+    if (WIN32)
+        if ((ISPC_LINUX_TARGET OR ISPC_ANDROID_TARGET OR ISPC_PS4_TARGET) AND NOT ISPC_GNUWIN32_PATH)
+            message (FATAL_ERROR "Set ISPC_GNUWIN32_PATH variable for cross compilation to Linux/Android/PS4 e.g. C:/gnuwin32")
+        endif()
+        if (ISPC_MACOS_TARGET AND NOT ISPC_MACOS_SDK_PATH)
+            message (FATAL_ERROR "Set ISPC_MACOS_SDK_PATH variable for cross compilation to MacOS e.g. C:/iusers/MacOSX10.14.sdk")
+        endif()
+    elseif (APPLE)
+        if ((ISPC_LINUX_TARGET OR ISPC_ANDROID_TARGET) AND NOT ISPC_ANDROID_NDK_PATH)
+            message (FATAL_ERROR "Set ISPC_ANDROID_NDK_PATH variable for cross compilation to Linux/Android e.g. /Users/Shared/android-ndk-r20")
+        elseif (ISPC_IOS_TARGET AND NOT ISPC_IOS_SDK_PATH)
+            message (FATAL_ERROR "Set ISPC_IOS_SDK_PATH variable for cross compilation to IOS "
+                "e.g. /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk")
+        endif()
+    else()
+        if (ISPC_MACOS_TARGET AND NOT ISPC_MACOS_SDK_PATH)
+            message (FATAL_ERROR "Set ISPC_MACOS_SDK_PATH variable for cross compilation to MacOS e.g. /iusers/MacOSX10.14.sdk")
+        endif()
+    endif()
+else()
+    if (WIN32)
+        set(ISPC_WINDOWS_TARGET ON)
+    elseif (APPLE)
+        set(ISPC_MACOS_TARGET ON)
+    else()
+        set(ISPC_LINUX_TARGET ON)
+    endif()
+endif()
 
 if (UNIX)
     option(ISPC_STATIC_STDCXX_LINK "Link statically with libstdc++ and libgcc" OFF)
@@ -80,8 +118,8 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Git.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateBuiltins.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Stdlib.cmake)
 
-find_package(PythonInterp 2.7 REQUIRED)
-    if (NOT PYTHONINTERP_FOUND)
+find_package(Python3 REQUIRED)
+    if (NOT Python3_Interpreter_FOUND)
         message(FATAL_ERROR "Python interpreter is not found")
     endif()
 
@@ -116,9 +154,15 @@ find_package(FLEX 2.5 REQUIRED)
     endif()
 
 set (ISPC_MASKS 1 8 16 32 64)
-set (ISPC_TARGETS avx2-i64x4 avx11-i64x4 avx1-i64x4 avx1 avx1-x2 avx11 avx11-x2 avx2 avx2-x2
-    sse2 sse2-x2 sse4-8 sse4-16 sse4 sse4-x2
-    generic-4 generic-8 generic-16 generic-32 generic-64 generic-1 knl skx skx-8)
+set (ISPC_TARGETS
+        sse2-i32x4 sse2-i32x8
+        sse4-i32x4 sse4-i32x8 sse4-i8x16 sse4-i16x8
+        # Note here that avx1-i32x4 is aliased to sse4-i32x4 plus avx attribute.
+        avx1-i32x8 avx1-i32x16 avx1-i64x4
+        avx2-i32x4 avx2-i32x8 avx2-i32x16 avx2-i64x4
+        avx512knl-i32x16
+        avx512skx-i32x8 avx512skx-i32x16
+        generic-1 generic-4 generic-8 generic-16 generic-32 generic-64)
 
 set(CLANG_LIBRARY_LIST clangFrontend clangDriver clangSerialization clangParse clangSema clangAnalysis clangAST clangBasic clangEdit clangLex)
 set(LLVM_COMPONENTS engine ipo bitreader bitwriter instrumentation linker)
@@ -127,9 +171,10 @@ if (${LLVM_VERSION_NUMBER} VERSION_GREATER "3.3.0")
     set(LLVM_COMPONENTS ${LLVM_COMPONENTS} option)
 endif()
 
+list(APPEND LLVM_COMPONENTS x86)
 if (ARM_ENABLED)
-    list(APPEND LLVM_COMPONENTS arm)
-    list(APPEND ISPC_TARGETS neon-32 neon-16 neon-8)
+    list(APPEND LLVM_COMPONENTS arm aarch64)
+    list(APPEND ISPC_TARGETS neon-i8x16 neon-i16x8 neon-i32x4 neon-i32x8)
 endif()
 if (NVPTX_ENABLED)
     list(APPEND LLVM_COMPONENTS nvptx)
@@ -210,6 +255,26 @@ endif()
 
 if (ISPC_NO_DUMPS)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_NO_DUMPS)
+endif()
+
+# Compile definitions for cross compilation
+if (NOT ISPC_WINDOWS_TARGET)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_WINDOWS_TARGET_OFF)
+endif()
+if (NOT ISPC_LINUX_TARGET)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_LINUX_TARGET_OFF)
+endif()
+if (NOT ISPC_MACOS_TARGET)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_MACOS_TARGET_OFF)
+endif()
+if (NOT ISPC_IOS_TARGET)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_IOS_TARGET_OFF)
+endif()
+if (NOT ISPC_ANDROID_TARGET)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_ANDROID_TARGET_OFF)
+endif()
+if (NOT ISPC_PS4_TARGET)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_PS4_TARGET_OFF)
 endif()
 
 # Include directories
@@ -354,10 +419,17 @@ if (ISPC_PREPARE_PACKAGE)
     set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
     set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
     set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_MATCH_3})
-    string(CONCAT CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}"
+    if (${CPACK_PACKAGE_VERSION_PATCH} MATCHES ".*dev")
+        string(CONCAT CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}"
+                             "-trunk"
+                             "-${ISPC_SYSTEM_NAME}")
+    else()
+        string(CONCAT CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}"
                              "-v${CPACK_PACKAGE_VERSION_MAJOR}"
                              ".${CPACK_PACKAGE_VERSION_MINOR}"
                              ".${CPACK_PACKAGE_VERSION_PATCH}"
                              "-${ISPC_SYSTEM_NAME}")
+
+    endif()
     include(CPack)
 endif()
