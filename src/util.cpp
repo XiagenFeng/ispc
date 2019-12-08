@@ -365,6 +365,7 @@ void Error(SourcePos p, const char *fmt, ...) {
 }
 
 void Debug(SourcePos p, const char *fmt, ...) {
+#ifndef ISPC_NO_DUMPS
     if (!g->debugPrint || g->quiet)
         return;
 
@@ -372,6 +373,7 @@ void Debug(SourcePos p, const char *fmt, ...) {
     va_start(args, fmt);
     lPrint("Debug", false, p, fmt, args);
     va_end(args);
+#endif
 }
 
 void Warning(SourcePos p, const char *fmt, ...) {
