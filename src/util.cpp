@@ -40,7 +40,6 @@
 
 #ifdef ISPC_HOST_IS_LINUX
 #include <alloca.h>
-#endif
 #include <unistd.h>
 #elif defined(ISPC_HOST_IS_WINDOWS)
 #include <malloc.h>
