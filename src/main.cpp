@@ -41,16 +41,17 @@
 #include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
 #include <time.h>
 #else
 #include <unistd.h>
-#endif // ISPC_IS_WINDOWS
+#endif // ISPC_HOST_IS_WINDOWS
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
 #define strcasecmp stricmp
 #ifndef BUILD_DATE
 #define BUILD_DATE __DATE__
@@ -61,12 +62,12 @@
 #else
 #define ISPC_VS_VERSION "Visual Studio 2013 and earlier"
 #endif
-#endif // ISPC_IS_WINDOWS
+#endif // ISPC_HOST_IS_WINDOWS
 
 #define MAX_NUM_ARGS (512)
 
 static void lPrintVersion() {
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
     printf("Intel(r) SPMD Program Compiler (ispc), %s (build date %s, LLVM %s)\n"
            "Supported Visual Studio versions: %s.\n",
            ISPC_VERSION, BUILD_DATE, ISPC_LLVM_VERSION_STRING, ISPC_VS_VERSION);
@@ -94,8 +95,8 @@ static void usage(int ret) {
     printf("    [--arch={%s}]\t\tSelect target architecture\n", Target::SupportedArchs());
     printf("    [--c++-include-file=<name>]\t\tSpecify name of file to emit in #include statement in generated C++ "
            "code.\n");
-#ifndef ISPC_IS_WINDOWS
-    printf("    [--colored-output]\t\tAlways use terminal colors in error/warning messages.\n");
+#ifndef ISPC_HOST_IS_WINDOWS
+    printf("    [--colored-output]\t\tAlways use terminal colors in error/warning messages\n");
 #endif
     printf("    ");
     char cpuHelp[2048];
@@ -104,12 +105,10 @@ static void usage(int ret) {
     PrintWithWordBreaks(cpuHelp, 16, TerminalWidth(), stdout);
     printf("    [-D<foo>]\t\t\t\t#define given value when running preprocessor\n");
     printf("    [--dev-stub <filename>]\t\tEmit device-side offload stub functions to file\n");
-#ifdef ISPC_IS_WINDOWS
-    printf("    [--dllexport]\t\t\tMake non-static functions DLL exported.  Windows only.\n");
-#endif
+    printf("    [--dllexport]\t\t\tMake non-static functions DLL exported.  Windows target only\n");
 #if ISPC_LLVM_VERSION >= ISPC_LLVM_3_5
     printf("    [--dwarf-version={2,3,4}]\t\tGenerate source-level debug information with given DWARF version "
-           "(triggers -g)\n");
+           "(triggers -g).  Ignored for Windows target\n");
 #endif
     printf("    [--emit-asm]\t\t\tGenerate assembly language file as output\n");
     printf("    [--x86-asm-syntax=<option>]\t\tSelect style of code if generating assembly\n");
@@ -117,6 +116,7 @@ static void usage(int ret) {
     printf("        att\t\t\t\tEmit AT&T-style assembly\n");
     printf("    [--emit-c++]\t\t\tEmit a C++ source file as output\n");
     printf("    [--emit-llvm]\t\t\tEmit LLVM bitode file as output\n");
+    printf("    [--emit-llvm-text]\t\t\tEmit LLVM bitode file as output in textual form\n");
     printf("    [--emit-obj]\t\t\tGenerate object file file as output (default)\n");
     printf("    [--force-alignment=<value>]\t\tForce alignment in memory allocations routine to be <value>\n");
     printf("    [-g]\t\t\t\tGenerate source-level debug information\n");
@@ -153,9 +153,7 @@ static void usage(int ret) {
     printf("        fast-masked-vload\t\tFaster masked vector loads on SSE (may go past end of array)\n");
     printf("        fast-math\t\t\tPerform non-IEEE-compliant optimizations of numeric expressions\n");
     printf("        force-aligned-memory\t\tAlways issue \"aligned\" vector load and store instructions\n");
-#ifndef ISPC_IS_WINDOWS
-    printf("    [--pic]\t\t\t\tGenerate position-independent code\n");
-#endif // !ISPC_IS_WINDOWS
+    printf("    [--pic]\t\t\t\tGenerate position-independent code.  Ignored for Windows target\n");
     printf("    [--quiet]\t\t\t\tSuppress all output\n");
     printf("    ");
     char targetHelp[2048];
@@ -163,6 +161,10 @@ static void usage(int ret) {
              "[--target=<t>]\t\t\tSelect target ISA and width.\n"
              "<t>={%s}",
              Target::SupportedTargets());
+    PrintWithWordBreaks(targetHelp, 24, TerminalWidth(), stdout);
+    printf("    ");
+    snprintf(targetHelp, sizeof(targetHelp), "[--target-os=<os>]\t\t\tSelect target OS.  <os>={%s}",
+             Target::SupportedOSes());
     PrintWithWordBreaks(targetHelp, 24, TerminalWidth(), stdout);
     printf("    [--version]\t\t\t\tPrint ispc version\n");
     printf("    [--werror]\t\t\t\tTreat warnings as errors\n");
@@ -177,6 +179,7 @@ static void devUsage(int ret) {
     lPrintVersion();
     printf("\nusage (developer options): ispc\n");
     printf("    [--debug]\t\t\t\tPrint information useful for debugging ispc\n");
+    printf("    [--debug-llvm]\t\t\tEnable LLVM debugging information (dumps to stderr)\n");
     printf("    [--print-target]\t\t\tPrint target's information\n");
     printf("    [--fuzz-test]\t\t\tRandomly perturb program input to test error conditions\n");
     printf("    [--fuzz-seed=<value>]\t\tSeed value for RNG for fuzz testing\n");
@@ -195,6 +198,7 @@ static void devUsage(int ret) {
 #ifndef ISPC_NO_DUMPS
     printf("    [--debug-phase=<value>]\t\tSet optimization phases to dump. "
            "--debug-phase=first,210:220,300,305,310:last\n");
+    printf("    [--dump-file]\t\t\tDump module IR to file(s) in current directory\n");
 #endif
 #if ISPC_LLVM_VERSION == ISPC_LLVM_3_4 || ISPC_LLVM_VERSION == ISPC_LLVM_3_5 // 3.4, 3.5
     printf("    [--debug-ir=<value>]\t\tSet optimization phase to generate debugIR after it\n");
@@ -370,8 +374,8 @@ static int ParsingPhaseName(char *stage) {
 
 static std::set<int> ParsingPhases(char *stages) {
     std::set<int> phases;
-    /* ensure the string is NUL terminated */
-    stages[sizeof(stages) - 1] = '\0';
+    auto len = strnlen(stages, 100);
+    Assert(len && len < 100 && "phases string is too long!");
     int begin = ParsingPhaseName(stages);
     int end = begin;
 
@@ -390,7 +394,7 @@ static std::set<int> ParsingPhases(char *stages) {
 }
 
 static void lParseInclude(const char *path) {
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
     char delim = ';';
 #else
     char delim = ':';
@@ -419,6 +423,7 @@ int main(int Argc, char *Argv[]) {
     llvm::sys::AddSignalHandler(lSignal, NULL);
 
     // initialize available LLVM targets
+    // TO-DO : Revisit after experimenting on arm and aarch64 hardware.
 #ifndef __arm__
     // FIXME: LLVM build on ARM doesn't build the x86 targets by default.
     // It's not clear that anyone's going to want to generate x86 from an
@@ -432,13 +437,20 @@ int main(int Argc, char *Argv[]) {
 #endif // !__ARM__
 
 #ifdef ISPC_ARM_ENABLED
-    // Generating ARM from x86 is more likely to be useful, though.
+    // Generating ARM and AARCH64 from x86 is more likely to be useful, though.
     LLVMInitializeARMTargetInfo();
     LLVMInitializeARMTarget();
     LLVMInitializeARMAsmPrinter();
     LLVMInitializeARMAsmParser();
     LLVMInitializeARMDisassembler();
     LLVMInitializeARMTargetMC();
+
+    LLVMInitializeAArch64TargetInfo();
+    LLVMInitializeAArch64Target();
+    LLVMInitializeAArch64AsmPrinter();
+    LLVMInitializeAArch64AsmParser();
+    LLVMInitializeAArch64Disassembler();
+    LLVMInitializeAArch64TargetMC();
 #endif
 
 #ifdef ISPC_NVPTX_ENABLED
@@ -464,6 +476,11 @@ int main(int Argc, char *Argv[]) {
     Module::OutputFlags flags = Module::NoFlags;
     const char *arch = NULL, *cpu = NULL, *target = NULL, *intelAsmSyntax = NULL;
 
+    // Default settings for PS4
+    if (g->target_os == TargetOS::OS_PS4) {
+        flags |= Module::GeneratePIC;
+        cpu = "btver2";
+    }
     for (int i = 1; i < argc; ++i) {
         if (!strcmp(argv[i], "--help"))
             usage(0);
@@ -484,9 +501,18 @@ int main(int Argc, char *Argv[]) {
                         argv[i] + 13);
                 usage(1);
             }
-        } else if (!strncmp(argv[i], "--arch=", 7))
-            arch = argv[i] + 7;
-        else if (!strncmp(argv[i], "--x86-asm-syntax=", 17)) {
+        } else if (!strncmp(argv[i], "--arch=", 7)) {
+            // Do not allow to set arch for PS4 target, it is pre-defined.
+            if (g->target_os != TargetOS::OS_PS4) {
+                arch = argv[i] + 7;
+                // Define arch alias
+                // LLVM TargetRegistry uses "x86-64", while triple uses "x86_64".
+                // We support both as input and internally keep it as "x86-64".
+                if (std::string(arch) == "x86_64") {
+                    arch = "x86-64";
+                }
+            }
+        } else if (!strncmp(argv[i], "--x86-asm-syntax=", 17)) {
             intelAsmSyntax = argv[i] + 17;
             if (!((std::string(intelAsmSyntax) == "intel") || (std::string(intelAsmSyntax) == "att"))) {
                 intelAsmSyntax = NULL;
@@ -495,9 +521,12 @@ int main(int Argc, char *Argv[]) {
                         "only intel and att are allowed.\n",
                         argv[i] + 17);
             }
-        } else if (!strncmp(argv[i], "--cpu=", 6))
-            cpu = argv[i] + 6;
-        else if (!strcmp(argv[i], "--fast-math")) {
+        } else if (!strncmp(argv[i], "--cpu=", 6)) {
+            // Do not allow to set cpu for PS4 target, it is pre-defined.
+            if (g->target_os != TargetOS::OS_PS4) {
+                cpu = argv[i] + 6;
+            }
+        } else if (!strcmp(argv[i], "--fast-math")) {
             fprintf(stderr, "--fast-math option has been renamed to --opt=fast-math!\n");
             usage(1);
         } else if (!strcmp(argv[i], "--fast-masked-vload")) {
@@ -506,10 +535,10 @@ int main(int Argc, char *Argv[]) {
             usage(1);
         } else if (!strcmp(argv[i], "--debug"))
             g->debugPrint = true;
-#ifdef ISPC_IS_WINDOWS
+        else if (!strcmp(argv[i], "--debug-llvm"))
+            llvm::DebugFlag = true;
         else if (!strcmp(argv[i], "--dllexport"))
             g->dllExport = true;
-#endif
 #if ISPC_LLVM_VERSION >= ISPC_LLVM_3_5
         else if (!strncmp(argv[i], "--dwarf-version=", 16)) {
             int val = atoi(argv[i] + 16);
@@ -541,6 +570,8 @@ int main(int Argc, char *Argv[]) {
             ot = Module::CXX;
         else if (!strcmp(argv[i], "--emit-llvm"))
             ot = Module::Bitcode;
+        else if (!strcmp(argv[i], "--emit-llvm-text"))
+            ot = Module::BitcodeText;
         else if (!strcmp(argv[i], "--emit-obj"))
             ot = Module::Object;
         else if (!strcmp(argv[i], "-I")) {
@@ -562,9 +593,16 @@ int main(int Argc, char *Argv[]) {
                 usage(1);
             }
             target = argv[i];
-        } else if (!strncmp(argv[i], "--target=", 9))
+        } else if (!strncmp(argv[i], "--target=", 9)) {
             target = argv[i] + 9;
-        else if (!strncmp(argv[i], "--math-lib=", 11)) {
+        } else if (!strncmp(argv[i], "--target-os=", 12)) {
+            g->target_os = StringToOS(argv[i] + 12);
+            if (g->target_os == OS_ERROR) {
+                fprintf(stderr, "Unsupported value for --target-os, supported values are: %s\n",
+                        Target::SupportedOSes());
+                usage(1);
+            }
+        } else if (!strncmp(argv[i], "--math-lib=", 11)) {
             const char *lib = argv[i] + 11;
             if (!strcmp(lib, "default"))
                 g->mathLib = Globals::Math_ISPC;
@@ -663,12 +701,12 @@ int main(int Argc, char *Argv[]) {
             g->includeStdlib = false;
         else if (!strcmp(argv[i], "--nocpp"))
             g->runCPP = false;
-#ifndef ISPC_IS_WINDOWS
         else if (!strcmp(argv[i], "--pic"))
             flags |= Module::GeneratePIC;
+#ifndef ISPC_IS_HOST_WINDOWS
         else if (!strcmp(argv[i], "--colored-output"))
             g->forceColoredOutput = true;
-#endif // !ISPC_IS_WINDOWS
+#endif // !ISPC_IS_HOST_WINDOWS
         else if (!strcmp(argv[i], "--quiet"))
             g->quiet = true;
         else if (!strcmp(argv[i], "--yydebug")) {
@@ -716,7 +754,8 @@ int main(int Argc, char *Argv[]) {
                             "handles the phases and it may possibly make some bugs go"
                             "away or introduce the new ones.\n");
             g->debug_stages = ParsingPhases(argv[i] + strlen("--debug-phase="));
-        }
+        } else if (strncmp(argv[i], "--dump-file", 11) == 0)
+            g->dumpFile = true;
 #endif
 
 #if ISPC_LLVM_VERSION == ISPC_LLVM_3_4 || ISPC_LLVM_VERSION == ISPC_LLVM_3_5 // 3.4, 3.5
@@ -746,7 +785,7 @@ int main(int Argc, char *Argv[]) {
 
     if (g->enableFuzzTest) {
         if (g->fuzzTestSeed == -1) {
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
             int seed = (unsigned)time(NULL);
 #else
             int seed = getpid();
@@ -754,7 +793,7 @@ int main(int Argc, char *Argv[]) {
             g->fuzzTestSeed = seed;
             Warning(SourcePos(), "Using seed %d for fuzz testing", g->fuzzTestSeed);
         }
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
         srand(g->fuzzTestSeed);
 #else
         srand48(g->fuzzTestSeed);
@@ -784,6 +823,14 @@ int main(int Argc, char *Argv[]) {
         Warning(SourcePos(), "No output file or header file name specified. "
                              "Program will be compiled and warnings/errors will "
                              "be issued, but no output will be generated.");
+
+    if (g->target_os == OS_WINDOWS && (flags & Module::GeneratePIC) != 0) {
+        Warning(SourcePos(), "--pic switch for Windows target will be ignored.");
+    }
+
+    if (g->target_os != OS_WINDOWS && g->dllExport) {
+        Warning(SourcePos(), "--dllexport switch will be ignored, as the target OS is not Windows.");
+    }
 
     if ((ot == Module::Asm) && (intelAsmSyntax != NULL)) {
         std::vector<const char *> Args(3);

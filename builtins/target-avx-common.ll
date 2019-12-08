@@ -1,4 +1,4 @@
-;;  Copyright (c) 2010-2015, Intel Corporation
+;;  Copyright (c) 2010-2019, Intel Corporation
 ;;  All rights reserved.
 ;;
 ;;  Redistribution and use in source and binary forms, with or without
@@ -139,6 +139,15 @@ define float @__rcp_uniform_float(float) nounwind readonly alwaysinline {
   ret float %iv_mul
 }
 
+define float @__rcp_fast_uniform_float(float) nounwind readonly alwaysinline {
+  ;    uniform float iv = extract(__rcp_u(v), 0);
+  ;    return iv;
+  %vecval = insertelement <4 x float> undef, float %0, i32 0
+  %call = call <4 x float> @llvm.x86.sse.rcp.ss(<4 x float> %vecval)
+  %scall = extractelement <4 x float> %call, i32 0
+  ret float %scall
+}
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; rsqrt
 
@@ -158,6 +167,15 @@ define float @__rsqrt_uniform_float(float) nounwind readonly alwaysinline {
   %is_mul = fmul float %is, %three_sub
   %half_scale = fmul float 0.5, %is_mul
   ret float %half_scale
+}
+
+define float @__rsqrt_fast_uniform_float(float) nounwind readonly alwaysinline {
+  ;  uniform float is = extract(__rsqrt_u(v), 0);
+  ;  return is;
+  %v = insertelement <4 x float> undef, float %0, i32 0
+  %vis = call <4 x float> @llvm.x86.sse.rsqrt.ss(<4 x float> %v)
+  %is = extractelement <4 x float> %vis, i32 0
+  ret float %is
 }
 
 
@@ -290,4 +308,53 @@ define i64 @__popcnt_int64(i64) nounwind readonly alwaysinline {
 
 define_avgs()
 declare_nvptx()
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; switch macro
+;; This is required to ensure that gather intrinsics are used with constant scale value.
+;; This particular implementation of the routine is used by non-avx512 targets currently(avx2-i64x4, avx2-i32x8, avx2-i32x16).
+;; $1: Return value
+;; $2: funcName
+;; $3: Width
+;; $4: scalar type of array
+;; $5: ptr
+;; $6: offset
+;; $7: scalar type of offset
+;; $8: vecMask
+;; $9: scalar type of vecMask
+;; $10: scale
+;; $11: scale type
+
+define(`convert_scale_to_const', `
+
+
+ switch i32 %$10, label %default_$1 [ i32 1, label %on_one_$1
+                                      i32 2, label %on_two_$1
+                                      i32 4, label %on_four_$1
+                                      i32 8, label %on_eight_$1]
+
+on_one_$1:
+  %$1_1 = call <$3 x $4> @$2(<$3 x $4> undef, i8 * %$5, <$3 x $7> %$6, <$3 x $9> %$8, $11 1)
+  br label %end_bb_$1
+
+on_two_$1:
+  %$1_2 = call <$3 x $4> @$2(<$3 x $4> undef, i8 * %$5, <$3 x $7> %$6, <$3 x $9> %$8, $11 2)
+  br label %end_bb_$1
+
+on_four_$1:
+  %$1_4 = call <$3 x $4> @$2(<$3 x $4> undef, i8 * %$5, <$3 x $7> %$6, <$3 x $9> %$8, $11 4)
+  br label %end_bb_$1
+
+on_eight_$1:
+  %$1_8 = call <$3 x $4> @$2(<$3 x $4> undef, i8 * %$5, <$3 x $7> %$6, <$3 x $9> %$8, $11 8)
+  br label %end_bb_$1
+
+default_$1:
+  unreachable
+
+end_bb_$1:
+  %$1 = phi <$3 x $4> [ %$1_1, %on_one_$1 ], [ %$1_2, %on_two_$1 ], [ %$1_4, %on_four_$1 ], [ %$1_8, %on_eight_$1 ]
+'
+)
+
 

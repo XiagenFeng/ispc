@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2013-2019, Intel Corporation
 #  All rights reserved.
@@ -325,9 +325,10 @@ def perf(options1, args):
         pwd1 = "..\\..\\"
 
     if options.perf_target != "":
-        test_only_r = " sse2-i32x4 sse2-i32x8 sse4-i32x4 sse4-i32x8 sse4-i16x8 \
-                        sse4-i8x16 avx1-i32x4 avx1-i32x8 avx1-i32x16 avx1-i64x4 avx1.1-i32x8 \
-                        avx1.1-i32x16 avx1.1-i64x4 avx2-i32x8 avx2-i32x16 avx2-i64x4 \
+        test_only_r = " sse2-i32x4 sse2-i32x8 \
+                        sse4-i32x4 sse4-i32x8 sse4-i16x8 sse4-i8x16 \
+                        avx1-i32x4 avx1-i32x8 avx1-i32x16 avx1-i64x4 \
+                        avx2-i32x4 avx2-i32x8 avx2-i32x16 avx2-i64x4 \
                         avx512knl-i32x16 avx512skx-i32x16 avx512skx-i32x8 "
         test_only = options.perf_target.split(",")
         for iterator in test_only:
@@ -360,7 +361,7 @@ def perf(options1, args):
     global ref_compiler
     global refc_compiler
     # check that required compilers exist
-    PATH_dir = string.split(os.getenv("PATH"), os.pathsep)
+    PATH_dir = os.environ["PATH"].split(os.pathsep)
     ispc_test_exists = False
     ispc_ref_exists = False
     ref_compiler_exists = False
@@ -573,7 +574,6 @@ import os
 import operator
 import time
 import glob
-import string
 import platform
 import shutil
 # our functions

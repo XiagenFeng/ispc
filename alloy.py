@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 #
 #  Copyright (c) 2013-2019, Intel Corporation
 #  All rights reserved.
@@ -70,7 +70,7 @@ def setting_paths(llvm, ispc, sde):
 
 def get_sde():
     sde_exe = ""
-    PATH_dir = string.split(os.getenv("PATH"), os.pathsep)
+    PATH_dir = os.environ["PATH"].split(os.pathsep)
     if current_OS == "Windows":
         sde_n = "sde.exe"
     else:
@@ -114,80 +114,77 @@ def try_do_LLVM(text, command, from_validation):
 
 def checkout_LLVM(component, use_git, version_LLVM, revision, target_dir, from_validation):
     # Identify the component
-    GIT_REPO_BASE="http://llvm.org/git/"
-    #GIT_REPO_BASE="https://github.com/llvm-mirror/"
+    GIT_REPO_BASE="https://github.com/llvm/llvm-project.git"
     if component == "llvm":
         SVN_REPO="https://llvm.org/svn/llvm-project/llvm/"
-        GIT_REPO=GIT_REPO_BASE+"llvm.git"
     elif component == "clang":
         SVN_REPO="https://llvm.org/svn/llvm-project/cfe/"
-        GIT_REPO=GIT_REPO_BASE+"clang.git"
     elif component == "libcxx":
         SVN_REPO="https://llvm.org/svn/llvm-project/libcxx/"
-        GIT_REPO=GIT_REPO_BASE+"libcxx.git"
     elif component == "clang-tools-extra":
         SVN_REPO="https://llvm.org/svn/llvm-project/clang-tools-extra/"
-        GIT_REPO=GIT_REPO_BASE+"clang-tools-extra.git"
     elif component == "compiler-rt":
         SVN_REPO="https://llvm.org/svn/llvm-project/compiler-rt/"
-        GIT_REPO=GIT_REPO_BASE+"compiler-rt.git"
     else:
         error("Trying to checkout unidentified component: " + component, 1)
 
     # Identify the version
     if  version_LLVM == "trunk":
         SVN_PATH="trunk"
-        GIT_BRANCH="master"
+        GIT_TAG="master"
+    elif  version_LLVM == "9_0":
+        SVN_PATH="branches/release_90/"
+        GIT_TAG="origin/release/9.x"
     elif  version_LLVM == "8_0":
         SVN_PATH="tags/RELEASE_800/final"
-        GIT_BRANCH="release_80"
+        GIT_TAG="llvmorg-8.0.0"
     elif  version_LLVM == "7_0":
         SVN_PATH="tags/RELEASE_701/final"
-        GIT_BRANCH="release_70"
+        GIT_TAG="llvmorg-7.0.1"
     elif  version_LLVM == "6_0":
         SVN_PATH="tags/RELEASE_601/final"
-        GIT_BRANCH="release_60"
+        GIT_TAG="llvmorg-6.0.1"
     elif  version_LLVM == "5_0":
         SVN_PATH="tags/RELEASE_502/final"
-        GIT_BRANCH="release_50"
+        GIT_TAG="llvmorg-5.0.2"
     elif  version_LLVM == "4_0":
         SVN_PATH="tags/RELEASE_401/final"
-        GIT_BRANCH="release_40"
+        GIT_TAG="llvmorg-4.0.1"
     elif  version_LLVM == "3_9":
         SVN_PATH="tags/RELEASE_390/final"
-        GIT_BRANCH="release_39"
+        GIT_TAG="llvmorg-3.9.0"
     elif  version_LLVM == "3_8":
         SVN_PATH="tags/RELEASE_381/final"
-        GIT_BRANCH="release_38"
+        GIT_TAG="llvmorg-3.8.1"
     elif  version_LLVM == "3_7":
         SVN_PATH="tags/RELEASE_370/final"
-        GIT_BRANCH="release_37"
+        GIT_TAG="llvmorg-3.7.0"
     elif  version_LLVM == "3_6":
         SVN_PATH="tags/RELEASE_362/final"
-        GIT_BRANCH="release_36"
+        GIT_TAG="llvmorg-3.6.2"
     elif  version_LLVM == "3_5":
         SVN_PATH="tags/RELEASE_351/final"
-        GIT_BRANCH="release_35"
+        GIT_TAG="llvmorg-3.5.1"
     elif  version_LLVM == "3_4":
         SVN_PATH="tags/RELEASE_34/dot2-final"
-        GIT_BRANCH="release_34"
+        GIT_TAG="llvmorg-3.4.2"
     elif  version_LLVM == "3_3":
         SVN_PATH="tags/RELEASE_33/final"
-        GIT_BRANCH="release_33"
+        GIT_TAG="llvmorg-3.3.0"
     elif  version_LLVM == "3_2":
         SVN_PATH="tags/RELEASE_32/final"
-        GIT_BRANCH="release_32"
+        GIT_TAG="llvmorg-3.2.0"
     else:
         error("Unsupported llvm version: " + version_LLVM, 1)
 
     if use_git:
-        try_do_LLVM("clone "+component+" from "+GIT_REPO+" to "+target_dir+" ",
-                    "git clone "+GIT_REPO+" "+target_dir,
+        try_do_LLVM("clone "+component+" from "+GIT_REPO_BASE+" to "+target_dir+" ",
+                    "git clone "+GIT_REPO_BASE+" "+target_dir,
                     from_validation)
-        if GIT_BRANCH != "master":
+        if GIT_TAG != "master":
             os.chdir(target_dir)
-            try_do_LLVM("switch to "+GIT_BRANCH+" branch ",
-                        "git checkout -b "+GIT_BRANCH+" remotes/origin/"+GIT_BRANCH, from_validation)
+            try_do_LLVM("switch to "+GIT_TAG+" tag ",
+                        "git checkout -b "+GIT_TAG+" "+GIT_TAG, from_validation)
             os.chdir("..")
     else:
         try_do_LLVM("load "+component+" from "+SVN_REPO+SVN_PATH+" ",
@@ -250,7 +247,7 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
     if current_OS == "MacOS" \
         and int(current_OS_version.split(".")[0]) >= 13 \
         and int(current_OS_version.split(".")[0]) < 16:
-        search_path = string.split(os.environ["PATH"], os.pathsep)
+        search_path = os.environ["PATH"].split(os.pathsep)
         found_xcrun = False
         for path in search_path:
             if os.path.exists(os.path.join(path, "xcrun")):
@@ -266,11 +263,15 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
     print_debug("Using folders: " + LLVM_SRC + " " + LLVM_BUILD + " " + LLVM_BIN + " in " + 
         llvm_home + "\n", from_validation, alloy_build)
     # load llvm
+    llvm_enable_projects = ""
     if tarball == "":
         checkout_LLVM("llvm", options.use_git, version_LLVM, revision, LLVM_SRC, from_validation)
-        os.chdir(LLVM_SRC + "/tools")
-        checkout_LLVM("clang", options.use_git, version_LLVM, revision, "clang", from_validation)
-        os.chdir("..")
+        if not options.use_git:
+            os.chdir(LLVM_SRC + "/tools")
+            checkout_LLVM("clang", options.use_git, version_LLVM, revision, "clang", from_validation)
+            os.chdir("..")
+        else:
+            llvm_enable_projects = "  -DLLVM_ENABLE_PROJECTS=\"clang"
         if current_OS == "MacOS" and int(current_OS_version.split(".")[0]) >= 13:
             # Starting with MacOS 10.9 Maverics, the system doesn't contain headers for standard C++ library and
             # the default library is libc++, bit libstdc++. The headers are part of XCode now. But we are checking out
@@ -280,15 +281,21 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
             # Note, that we can also build a libc++ library, but it must be on system default location or should be passed
             # to the linker explicitly (either through command line or environment variables). So we are not doing it
             # currently to make the build process easier.
-            os.chdir("projects")
-            checkout_LLVM("libcxx", options.use_git, version_LLVM, revision, "libcxx", from_validation)
-            os.chdir("..")
+            if not options.use_git:
+                os.chdir("projects")
+                checkout_LLVM("libcxx", options.use_git, version_LLVM, revision, "libcxx", from_validation)
+                os.chdir("..")
+            else:
+                llvm_enable_projects +=";libcxx"
         if extra == True:
-            os.chdir("tools/clang/tools")
-            checkout_LLVM("clang-tools-extra", options.use_git, version_LLVM, revision, "extra", from_validation)
-            os.chdir("../../../projects")
-            checkout_LLVM("compiler-rt", options.use_git, version_LLVM, revision, "compiler-rt", from_validation)
-            os.chdir("..")
+            if not options.use_git:
+                os.chdir("tools/clang/tools")
+                checkout_LLVM("clang-tools-extra", options.use_git, version_LLVM, revision, "extra", from_validation)
+                os.chdir("../../../projects")
+                checkout_LLVM("compiler-rt", options.use_git, version_LLVM, revision, "compiler-rt", from_validation)
+                os.chdir("..")
+            else:
+                llvm_enable_projects +=";compiler-rt;clang-tools-extra"
     else:
         tar = tarball.split(" ")
         os.makedirs(LLVM_SRC) 
@@ -302,6 +309,9 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
                     "tar -xvzf " + tar[1] + " --strip-components 1", from_validation)
         os.chdir("../../")
     # paching llvm
+    if options.use_git:
+        llvm_enable_projects += "\""
+        os.chdir(LLVM_SRC + "/llvm")
     patches = glob.glob(os.environ["ISPC_HOME"] + os.sep + "llvm_patches" + os.sep + "*.*")
     for patch in patches:
         if version_LLVM in os.path.basename(patch):
@@ -309,12 +319,17 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
                 try_do_LLVM("patch LLVM with patch " + patch + " ", "patch -p0 < " + patch, from_validation)
             else:
                 try_do_LLVM("patch LLVM with patch " + patch + " ", "C:\\gnuwin32\\bin\\patch.exe -p0 < " + patch, from_validation)
+    if options.use_git:
+        os.chdir("../")
     os.chdir("../")
     # configuring llvm, build first part of selfbuild
     os.makedirs(LLVM_BUILD)
     os.makedirs(LLVM_BIN)
     selfbuild_compiler = ""
     LLVM_configure_capable = ["3_2", "3_3", "3_4", "3_5", "3_6", "3_7"]
+    cmakelists_path = LLVM_SRC
+    if options.use_git:
+        cmakelists_path += "/llvm"
     if selfbuild:
         print_debug("Making selfbuild and use folders " + LLVM_BUILD_selfbuild + " and " +
             LLVM_BIN_selfbuild + "\n", from_validation, alloy_build)
@@ -326,6 +341,7 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
                     "cmake -G " + "\"" + generator + "\"" + " -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" +
                     "  -DCMAKE_INSTALL_PREFIX=" + llvm_home + "/" + LLVM_BIN_selfbuild +
                     "  -DCMAKE_BUILD_TYPE=Release" +
+                    llvm_enable_projects +
                     get_llvm_enable_dump_switch(version_LLVM) +
                     "  -DLLVM_ENABLE_ASSERTIONS=ON" +
                     "  -DLLVM_INSTALL_UTILS=ON" +
@@ -333,8 +349,8 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
                     (("  -DCMAKE_C_COMPILER=" + gcc_toolchain_path+"/bin/gcc") if gcc_toolchain_path != "" else "") +
                     (("  -DCMAKE_CXX_COMPILER=" + gcc_toolchain_path+"/bin/g++") if gcc_toolchain_path != "" else "") +
                     (("  -DDEFAULT_SYSROOT=" + mac_system_root) if mac_system_root != "" else "") +
-                    "  -DLLVM_TARGETS_TO_BUILD=NVPTX\;X86" +
-                    " ../" + LLVM_SRC,
+                    "  -DLLVM_TARGETS_TO_BUILD=AArch64\;ARM\;NVPTX\;X86" +
+                    " ../" + cmakelists_path,
                     from_validation)
             selfbuild_compiler = ("  -DCMAKE_C_COMPILER=" +llvm_home+ "/" + LLVM_BIN_selfbuild + "/bin/clang " +
                                   "  -DCMAKE_CXX_COMPILER="+llvm_home+ "/" + LLVM_BIN_selfbuild + "/bin/clang++ ")
@@ -342,7 +358,7 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
             try_do_LLVM("configure release version for selfbuild ",
                         "../" + LLVM_SRC + "/configure --prefix=" + llvm_home + "/" +
                         LLVM_BIN_selfbuild + " --enable-optimized" +
-                        " --enable-targets=x86,x86_64,nvptx" +
+                        " --enable-targets=aarch64,arm,armeb,thumb,thumbeb,x86,x86_64,nvptx" +
                         ((" --with-gcc-toolchain=" + gcc_toolchain_path) if gcc_toolchain_path != "" else "") +
                         ((" --with-default-sysroot=" + mac_system_root) if mac_system_root != "" else ""),
                         from_validation)
@@ -365,6 +381,7 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
                         selfbuild_compiler +
                         "  -DCMAKE_INSTALL_PREFIX=" + llvm_home + "/" + LLVM_BIN +
                         "  -DCMAKE_BUILD_TYPE=Release" +
+                        llvm_enable_projects +
                         get_llvm_enable_dump_switch(version_LLVM) +
                         "  -DLLVM_ENABLE_ASSERTIONS=ON" +
                         "  -DLLVM_INSTALL_UTILS=ON" +
@@ -372,14 +389,14 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
                         (("  -DCMAKE_C_COMPILER=" + gcc_toolchain_path+"/bin/gcc") if gcc_toolchain_path != "" and selfbuild_compiler == "" else "") +
                         (("  -DCMAKE_CXX_COMPILER=" + gcc_toolchain_path+"/bin/g++") if gcc_toolchain_path != "" and selfbuild_compiler == "" else "") +
                         (("  -DDEFAULT_SYSROOT=" + mac_system_root) if mac_system_root != "" else "") +
-                        "  -DLLVM_TARGETS_TO_BUILD=NVPTX\;X86" +
-                        " ../" + LLVM_SRC,
+                        "  -DLLVM_TARGETS_TO_BUILD=AArch64\;ARM\;NVPTX\;X86" +
+                        " ../" + cmakelists_path,
                         from_validation)
             else:
                 try_do_LLVM("configure release version ",
                         selfbuild_compiler + "../" + LLVM_SRC + "/configure --prefix=" + llvm_home + "/" +
                         LLVM_BIN + " --enable-optimized" +
-                        " --enable-targets=x86,x86_64,nvptx" +
+                        " --enable-targets=aarch64,arm,armeb,thumb,thumbeb,x86,x86_64,nvptx" +
                         ((" --with-gcc-toolchain=" + gcc_toolchain_path) if gcc_toolchain_path != "" else "") +
                         ((" --with-default-sysroot=" + mac_system_root) if mac_system_root != "" else ""),
                         from_validation)
@@ -387,11 +404,12 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
             try_do_LLVM("configure release version ",
                     'cmake -G ' + '\"' + generator + '\"' + ' -DCMAKE_INSTALL_PREFIX="..\\'+ LLVM_BIN + '" ' +
                     '  -DCMAKE_BUILD_TYPE=Release' +
+                    llvm_enable_projects +
                     get_llvm_enable_dump_switch(version_LLVM) +
                     '  -DLLVM_ENABLE_ASSERTIONS=ON' +
                     '  -DLLVM_INSTALL_UTILS=ON' +
-                    '  -DLLVM_TARGETS_TO_BUILD=X86' +
-                    '  -DLLVM_LIT_TOOLS_DIR="C:\\gnuwin32\\bin" ..\\' + LLVM_SRC,
+                    '  -DLLVM_TARGETS_TO_BUILD=AArch64\;ARM\;X86' +
+                    '  -DLLVM_LIT_TOOLS_DIR="C:\\gnuwin32\\bin" ..\\' + cmakelists_path,
                     from_validation)
     else:
         if  version_LLVM not in LLVM_configure_capable:
@@ -400,6 +418,7 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
                     selfbuild_compiler +
                     "  -DCMAKE_INSTALL_PREFIX=" + llvm_home + "/" + LLVM_BIN +
                     "  -DCMAKE_BUILD_TYPE=Debug" +
+                    llvm_enable_projects +
                     get_llvm_enable_dump_switch(version_LLVM) +
                     "  -DLLVM_ENABLE_ASSERTIONS=ON" +
                     "  -DLLVM_INSTALL_UTILS=ON" +
@@ -407,14 +426,14 @@ def build_LLVM(version_LLVM, revision, folder, tarball, debug, selfbuild, extra,
                     (("  -DCMAKE_C_COMPILER=" + gcc_toolchain_path+"/bin/gcc") if gcc_toolchain_path != "" and selfbuild_compiler == "" else "") +
                     (("  -DCMAKE_CXX_COMPILER=" + gcc_toolchain_path+"/bin/g++") if gcc_toolchain_path != "" and selfbuild_compiler == "" else "") +
                     (("  -DDEFAULT_SYSROOT=" + mac_system_root) if mac_system_root != "" else "") +
-                    "  -DLLVM_TARGETS_TO_BUILD=NVPTX\;X86" +
-                    " ../" + LLVM_SRC,
+                    "  -DLLVM_TARGETS_TO_BUILD=AArch64\;ARM\;NVPTX\;X86" +
+                    " ../" + cmakelists_path,
                     from_validation)
         else:
             try_do_LLVM("configure debug version ",
                         selfbuild_compiler + "../" + LLVM_SRC + "/configure --prefix=" + llvm_home + "/" + LLVM_BIN +
                         " --enable-debug-runtime --enable-debug-symbols --enable-keep-symbols" +
-                        " --enable-targets=x86,x86_64,nvptx" +
+                        " --enable-targets=aarch64,arm,armeb,thumb,thumbeb,x86,x86_64,nvptx" +
                         ((" --with-gcc-toolchain=" + gcc_toolchain_path) if gcc_toolchain_path != "" else "") +
                         ((" --with-default-sysroot=" + mac_system_root) if mac_system_root != "" else ""),
                         from_validation)
@@ -445,15 +464,13 @@ def unsupported_llvm_targets(LLVM_VERSION):
     return []
 
 
-# Split targets into categories: native, generic, knc, sde.
+# Split targets into categories: native, generic, sde.
 # native - native targets run natively on current hardware.
 # generic - hardware agnostic generic target.
-# knc - knc target. This one is special, as it requires additional steps to run.
 # sde - native target, which need to be emulated on current hardware.
 def check_targets():
     result = []
     result_generic = []
-    result_knc = []
     result_sde = []
     # check what native targets do we have
     if current_OS != "Windows":
@@ -481,14 +498,12 @@ def check_targets():
                  ["SSE2", "SSE4"], "-wsm", False]),
       ("AVX",    [["avx1-i32x4",  "avx1-i32x8",  "avx1-i32x16",  "avx1-i64x4"],
                  ["SSE2", "SSE4", "AVX"], "-snb", False]),
-      ("AVX1.1", [["avx1.1-i32x8","avx1.1-i32x16","avx1.1-i64x4"],
-                 ["SSE2", "SSE4", "AVX", "AVX1.1"], "-ivb", False]),
-      ("AVX2",   [["avx2-i32x8",  "avx2-i32x16",  "avx2-i64x4"],
-                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2"], "-hsw", False]),
+      ("AVX2",   [["avx2-i32x4", "avx2-i32x8",  "avx2-i32x16",  "avx2-i64x4"],
+                 ["SSE2", "SSE4", "AVX", "AVX2"], "-hsw", False]),
       ("KNL",    [["avx512knl-i32x16"],
-                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2", "KNL"], "-knl", False]),
+                 ["SSE2", "SSE4", "AVX", "AVX2", "KNL"], "-knl", False]),
       ("SKX",    [["avx512skx-i32x16", "avx512skx-i32x8"],
-                 ["SSE2", "SSE4", "AVX", "AVX1.1", "AVX2", "SKX"], "-skx", False])
+                 ["SSE2", "SSE4", "AVX", "AVX2", "SKX"], "-skx", False])
     ])
 
     hw_arch = take_lines("check_isa.exe", "first").split()[1]
@@ -512,10 +527,6 @@ def check_targets():
             for target in targets:
                 result_sde = result_sde + [[item[2], target]]
 
-    # generate targets for KNC
-    if  current_OS == "Linux":
-        result_knc = ["knc-generic"]
-
     if current_OS != "Windows":
         result_generic = ["generic-4", "generic-16", "generic-8", "generic-1", "generic-32", "generic-64"]
 
@@ -526,7 +537,7 @@ def check_targets():
             "To test all platforms please set SDE_HOME to path containing SDE.\n" +
             "Please refer to http://www.intel.com/software/sde for SDE download information.", 2)
 
-    return [result, result_generic, result_sde, result_knc]
+    return [result, result_generic, result_sde]
 
 def build_ispc(version_LLVM, make):
     current_path = os.getcwd()
@@ -696,7 +707,7 @@ def validation_run(only, only_targets, reference_branch, number, notify, update,
         stability.no_opt = False
         stability.wrapexe = ""
 # prepare parameters of run
-        [targets_t, targets_generic_t, sde_targets_t, targets_knc_t] = check_targets()
+        [targets_t, targets_generic_t, sde_targets_t] = check_targets()
         rebuild = True
         opts = []
         archs = []
@@ -721,7 +732,7 @@ def validation_run(only, only_targets, reference_branch, number, notify, update,
             archs.append("x86-64")
         if "native" in only:
             sde_targets_t = []
-        for i in ["3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "4.0", "5.0", "6.0", "7.0", "8.0", "trunk"]:
+        for i in ["3.2", "3.3", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9", "4.0", "5.0", "6.0", "7.0", "8.0", "9.0", "trunk"]:
             if i in only:
                 LLVM.append(i)
         if "current" in only:
@@ -754,10 +765,6 @@ def validation_run(only, only_targets, reference_branch, number, notify, update,
                 for j in range(0,len(sde_targets_t)):
                     if i in sde_targets_t[j][1]:
                         sde_targets.append(sde_targets_t[j])
-                        err = False
-                for j in range(0,len(targets_knc_t)):
-                    if i in targets_knc_t[j]:
-                        targets.append(targets_knc_t[j])
                         err = False
                 if err == True:
                     error("You haven't sde for target " + i, 1)
@@ -805,9 +812,6 @@ def validation_run(only, only_targets, reference_branch, number, notify, update,
                 # sometimes clang++ is not avaluable. if --ispc-build-compiler = gcc we will pass in g++ compiler
                 if options.ispc_build_compiler == "gcc":
                     stability.compiler_exe = "g++"
-                # but 'knc/knl' generic target is supported only by icpc, so set explicitly
-                if ("knc-generic" in stability.target):
-                    stability.compiler_exe = "icpc"
                 # now set archs for targets
                 if ("generic" in stability.target):
                     arch = gen_archs
@@ -839,8 +843,6 @@ def validation_run(only, only_targets, reference_branch, number, notify, update,
                 # sometimes clang++ is not avaluable. if --ispc-build-compiler = gcc we will pass in g++ compiler
                 if options.ispc_build_compiler == "gcc":
                     stability.compiler_exe = "g++"
-                if ("knc-generic" in stability.target):
-                    stability.compiler_exe = "icpc"
                 stability.wrapexe = get_sde() + " " + sde_targets[j][0] + " -- "
                 if ("generic" in stability.target):
                     arch = gen_archs
@@ -1006,7 +1008,7 @@ def Main():
         if os.environ.get("SMTP_ISPC") == None:
             error("you have no SMTP_ISPC in your environment for option notify", 1)
     if options.only != "":
-        test_only_r = " 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 4.0 5.0 6.0 7.0 8.0 trunk current build stability performance x86 x86-64 x86_64 -O0 -O2 native debug nodebug "
+        test_only_r = " 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 4.0 5.0 6.0 7.0 8.0 9.0 trunk current build stability performance x86 x86-64 x86_64 -O0 -O2 native debug nodebug "
         test_only = options.only.split(" ")
         for iterator in test_only:
             if not (" " + iterator + " " in test_only_r):
@@ -1039,7 +1041,7 @@ def Main():
         generator = options.generator
     else:
         if current_OS == "Windows":
-            generator = "Visual Studio 14"
+            generator = "Visual Studio 15"
         else:
             generator = "Unix Makefiles"
     try:
@@ -1072,7 +1074,6 @@ import errno
 import operator
 import time
 import glob
-import string
 import platform
 import smtplib
 import datetime
@@ -1081,10 +1082,10 @@ import multiprocessing
 import subprocess
 import re
 from shutil import copyfile
-from email.MIMEMultipart import MIMEMultipart
-from email.MIMEBase import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
-from email.Encoders import encode_base64
+from email.encoders import encode_base64
 # our drivers
 import run_tests
 import perf
@@ -1110,7 +1111,6 @@ if __name__ == '__main__':
     "Try to build compiler with all LLVM\n\talloy.py -r --only=build\n" +
     "Performance validation run with 10 runs of each test and comparing to branch 'old'\n\talloy.py -r --only=performance --compare-with=old --number=10\n" +
     "Validation run. Update fail_db.txt with new fails, send results to my@my.com\n\talloy.py -r --update-errors=F --notify='my@my.com'\n" +
-    "Test KNC target (not tested when tested all supported targets, so should be set explicitly via --only-targets)\n\talloy.py -r --only='stability' --only-targets='knc-generic'\n" +
     "Test KNL target (requires sde)\n\talloy.py -r --only='stability' --only-targets='avx512knl-i32x16'\n")
 
     num_threads="%s" % multiprocessing.cpu_count()
@@ -1127,7 +1127,7 @@ if __name__ == '__main__':
     llvm_group = OptionGroup(parser, "Options for building LLVM",
                     "These options must be used with -b option.")
     llvm_group.add_option('--version', dest='version',
-        help='version of llvm to build: 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 4.0 5.0 6.0 7.0 8.0 trunk. Default: trunk', default="trunk")
+        help='version of llvm to build: 3.2 3.3 3.4 3.5 3.6 3.7 3.8 3.9 4.0 5.0 6.0 7.0 8.0 9.0 trunk. Default: trunk', default="trunk")
     llvm_group.add_option('--with-gcc-toolchain', dest='gcc_toolchain_path',
          help='GCC install dir to use when building clang. It is important to set when ' +
          'you have alternative gcc installation. Note that otherwise gcc from standard ' +
@@ -1163,14 +1163,13 @@ if __name__ == '__main__':
     run_group.add_option('--update-errors', dest='update',
         help='rewrite fail_db.txt file according to received results (F or FP)', default="")
     run_group.add_option('--only-targets', dest='only_targets',
-        help='set list of targets to test. Possible values - all subnames of targets, plus "knc-generic" for "generic" ' +
-             'version of knc support', default="")
+        help='set list of targets to test. Possible values - all subnames of targets', default="")
     run_group.add_option('--time', dest='time',
         help='display time of testing', default=False, action='store_true')
     run_group.add_option('--only', dest='only',
         help='set types of tests. Possible values:\n' + 
             '-O0, -O2, x86, x86-64, stability (test only stability), performance (test only performance),\n' +
-            'build (only build with different LLVM), 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 5.0, 6.0, 7.0, 8.0, trunk, native (do not use SDE),\n' +
+            'build (only build with different LLVM), 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, trunk, native (do not use SDE),\n' +
             'current (do not rebuild ISPC), debug (only with debug info), nodebug (only without debug info, default).',
             default="")
     run_group.add_option('--perf_LLVM', dest='perf_llvm',

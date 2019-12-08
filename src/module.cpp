@@ -61,7 +61,7 @@
 #ifdef ISPC_NVPTX_ENABLED
 #include <map>
 #endif /* ISPC_NVPTX_ENABLED */
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
 #include <io.h>
 #include <windows.h>
 #define strcasecmp stricmp
@@ -395,15 +395,13 @@ Module::Module(const char *fn) {
 
     if (g->generateDebuggingSymbols) {
 #if ISPC_LLVM_VERSION >= ISPC_LLVM_3_8
-        // TODO: what to do in case of cross-compilation?
-        // i.e. in case of PS4.
-#ifdef ISPC_IS_WINDOWS
         // To enable debug information on Windows, we have to let llvm know, that
         // debug information should be emitted in CodeView format.
-        module->addModuleFlag(llvm::Module::Warning, "CodeView", 1);
-#else
-        module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", g->generateDWARFVersion);
-#endif
+        if (g->target_os == OS_WINDOWS) {
+            module->addModuleFlag(llvm::Module::Warning, "CodeView", 1);
+        } else {
+            module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", g->generateDWARFVersion);
+        }
 #endif
         diBuilder = new llvm::DIBuilder(*module);
 
@@ -863,7 +861,7 @@ static void lCheckForStructParameters(const FunctionType *ftype, SourcePos pos) 
     false if any errors were encountered.
  */
 void Module::AddFunctionDeclaration(const std::string &name, const FunctionType *functionType,
-                                    StorageClass storageClass, bool isInline, SourcePos pos) {
+                                    StorageClass storageClass, bool isInline, bool isNoInline, SourcePos pos) {
     Assert(functionType != NULL);
 
     // If a global variable with the same name has already been declared
@@ -986,13 +984,17 @@ void Module::AddFunctionDeclaration(const std::string &name, const FunctionType 
     }
     llvm::Function *function = llvm::Function::Create(llvmFunctionType, linkage, functionName.c_str(), module);
 
-#ifdef ISPC_IS_WINDOWS
-    // Make export functions callable from DLLS.
-    if ((g->dllExport) && (storageClass != SC_STATIC)) {
-        function->setDLLStorageClass(llvm::GlobalValue::DLLExportStorageClass);
+    if (g->target_os == OS_WINDOWS) {
+        // Make export functions callable from DLLs.
+        if ((g->dllExport) && (storageClass != SC_STATIC)) {
+            function->setDLLStorageClass(llvm::GlobalValue::DLLExportStorageClass);
+        }
     }
-#endif
 
+    if (isNoInline && isInline) {
+        Error(pos, "Illegal to use \"noinline\" and \"inline\" qualifiers together on function \"%s\".", name.c_str());
+        return;
+    }
     // Set function attributes: we never throw exceptions
     function->setDoesNotThrow();
     if (storageClass != SC_EXTERN_C && isInline)
@@ -1000,6 +1002,13 @@ void Module::AddFunctionDeclaration(const std::string &name, const FunctionType 
         function->addFnAttr(llvm::Attributes::AlwaysInline);
 #else // LLVM 3.3+
         function->addFnAttr(llvm::Attribute::AlwaysInline);
+#endif
+
+    if (isNoInline)
+#ifdef LLVM_3_2
+        function->addFnAttr(llvm::Attributes::NoInline);
+#else // LLVM 3.3+
+        function->addFnAttr(llvm::Attribute::NoInline);
 #endif
 
     if (functionType->isTask)
@@ -1200,6 +1209,10 @@ bool Module::writeOutput(OutputType outputType, OutputFlags flags, const char *o
                     if (strcasecmp(suffix, "bc"))
                     fileType = "LLVM bitcode";
                 break;
+            case BitcodeText:
+                if (strcasecmp(suffix, "ll"))
+                    fileType = "LLVM assembly";
+                break;
             case Object:
                 if (strcasecmp(suffix, "o") && strcasecmp(suffix, "obj"))
                     fileType = "object";
@@ -1248,8 +1261,8 @@ bool Module::writeOutput(OutputType outputType, OutputFlags flags, const char *o
         return writeHostStub(outFileName);
     else if (outputType == DevStub)
         return writeDevStub(outFileName);
-    else if (outputType == Bitcode)
-        return writeBitcode(module, outFileName);
+    else if ((outputType == Bitcode) || (outputType == BitcodeText))
+        return writeBitcode(module, outFileName, outputType);
     else if (outputType == CXX) {
         if (g->target->getISA() != Target::GENERIC) {
             Error(SourcePos(), "Only \"generic-*\" targets can be used with "
@@ -1336,7 +1349,7 @@ static void lFixAttributes(const vecString_t &src, vecString_t &dst) {
 }
 #endif /* ISPC_NVPTX_ENABLED */
 
-bool Module::writeBitcode(llvm::Module *module, const char *outFileName) {
+bool Module::writeBitcode(llvm::Module *module, const char *outFileName, OutputType outputType) {
     // Get a file descriptor corresponding to where we want the output to
     // go.  If we open it, it'll be closed by the llvm::raw_fd_ostream
     // destructor.
@@ -1345,12 +1358,12 @@ bool Module::writeBitcode(llvm::Module *module, const char *outFileName) {
         fd = 1; // stdout
     else {
         int flags = O_CREAT | O_WRONLY | O_TRUNC;
-#ifdef ISPC_IS_WINDOWS
+#ifdef ISPC_HOST_IS_WINDOWS
         flags |= O_BINARY;
         fd = _open(outFileName, flags, 0644);
 #else
         fd = open(outFileName, flags, 0644);
-#endif // ISPC_IS_WINDOWS
+#endif // ISPC_HOST_IS_WINDOWS
         if (fd == -1) {
             perror(outFileName);
             return false;
@@ -1395,11 +1408,14 @@ bool Module::writeBitcode(llvm::Module *module, const char *outFileName) {
         }
     } else
 #endif /* ISPC_NVPTX_ENABLED */
+        if (outputType == Bitcode)
 #if ISPC_LLVM_VERSION < ISPC_LLVM_7_0
         llvm::WriteBitcodeToFile(module, fos);
 #else
-    llvm::WriteBitcodeToFile(*module, fos);
+        llvm::WriteBitcodeToFile(*module, fos);
 #endif
+    else if (outputType == BitcodeText)
+        module->print(fos, nullptr);
 
     return true;
 }
@@ -2479,6 +2495,15 @@ void Module::execPreprocessor(const char *infilename, llvm::raw_string_ostream *
             *p = '_';
         ++p;
     }
+
+    // Add 'TARGET_WIDTH' macro to expose vector width to user.
+    std::string TARGET_WIDTH = "TARGET_WIDTH=" + std::to_string(g->target->getVectorWidth());
+    opts.addMacroDef(TARGET_WIDTH);
+
+    // Add 'TARGET_ELEMENT_WIDTH' macro to expose element width to user.
+    std::string TARGET_ELEMENT_WIDTH = "TARGET_ELEMENT_WIDTH=" + std::to_string(g->target->getDataTypeWidth() / 8);
+    opts.addMacroDef(TARGET_ELEMENT_WIDTH);
+
     opts.addMacroDef(targetMacro);
 
     if (g->target->is32Bit())
@@ -2495,8 +2520,12 @@ void Module::execPreprocessor(const char *infilename, llvm::raw_string_ostream *
     if (g->opt.forceAlignedMemory)
         opts.addMacroDef("ISPC_FORCE_ALIGNED_MEMORY");
 
-    opts.addMacroDef("ISPC_MAJOR_VERSION=1");
-    opts.addMacroDef("ISPC_MINOR_VERSION=4");
+    constexpr int buf_size = 25;
+    char ispc_major[buf_size], ispc_minor[buf_size];
+    snprintf(ispc_major, buf_size, "ISPC_MAJOR_VERSION=%d", ISPC_VERSION_MAJOR);
+    snprintf(ispc_minor, buf_size, "ISPC_MINOR_VERSION=%d", ISPC_VERSION_MINOR);
+    opts.addMacroDef(ispc_major);
+    opts.addMacroDef(ispc_minor);
 
     if (g->includeStdlib) {
         if (g->opt.disableAsserts)
@@ -2749,14 +2778,6 @@ static void lCreateDispatchFunction(llvm::Module *module, llvm::Function *setISA
 
         // dispatchNum is needed to separate generic from *-generic target
         int dispatchNum = i;
-        if ((Target::ISA)(i == Target::GENERIC) && !g->target->getTreatGenericAsSmth().empty()) {
-            if (g->target->getTreatGenericAsSmth() == "knl_generic")
-                dispatchNum = Target::KNL_AVX512;
-            else {
-                Error(SourcePos(), "*-generic target can be called only with knl");
-                exit(1);
-            }
-        }
 
         llvm::Value *ok = llvm::CmpInst::Create(llvm::Instruction::ICmp, llvm::CmpInst::ICMP_SGE, systemISA,
                                                 LLVMInt32(dispatchNum), "isa_ok", bblock);
@@ -2824,9 +2845,17 @@ static llvm::Module *lInitDispatchModule() {
     module->setDataLayout(g->target->getDataLayout()->getStringRepresentation());
 
     // First, link in the definitions from the builtins-dispatch.ll file.
-    extern unsigned char builtins_bitcode_dispatch[];
-    extern int builtins_bitcode_dispatch_length;
-    AddBitcodeToModule(builtins_bitcode_dispatch, builtins_bitcode_dispatch_length, module);
+    if (g->target_os == TargetOS::OS_WINDOWS) {
+#ifdef ISPC_HOST_IS_WINDOWS // supported only on Windows
+        extern const unsigned char builtins_bitcode_win_dispatch[];
+        extern int builtins_bitcode_win_dispatch_length;
+        AddBitcodeToModule(builtins_bitcode_win_dispatch, builtins_bitcode_win_dispatch_length, module);
+#endif
+    } else {
+        extern const unsigned char builtins_bitcode_unix_dispatch[];
+        extern int builtins_bitcode_unix_dispatch_length;
+        AddBitcodeToModule(builtins_bitcode_unix_dispatch, builtins_bitcode_unix_dispatch_length, module);
+    }
     return module;
 }
 
@@ -3230,8 +3259,8 @@ int Module::CompileAndOutput(const char *srcFile, const char *arch, const char *
         lEmitDispatchModule(dispatchModule, exportedFunctions);
 
         if (outFileName != NULL) {
-            if (outputType == Bitcode)
-                writeBitcode(dispatchModule, outFileName);
+            if ((outputType == Bitcode) || (outputType == BitcodeText))
+                writeBitcode(dispatchModule, outFileName, outputType);
             else
                 writeObjectFileOrAssembly(firstTargetMachine, dispatchModule, outputType, outFileName);
         }

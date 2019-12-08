@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2018, Intel Corporation
+#  Copyright (c) 2018-2019, Intel Corporation
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -39,7 +39,7 @@ function(add_ispc_example)
     set(multiValueArgs ISPC_IA_TARGETS ISPC_ARM_TARGETS ISPC_FLAGS TARGET_SOURCES LIBRARIES DATA_FILES)
     cmake_parse_arguments("example" "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN} )
 
-    set(ISPC_KNOWN_TARGETS "sse2" "sse4" "avx1-" "avx1.1" "avx2" "avx512knl" "avx512skx")
+    set(ISPC_KNOWN_TARGETS "sse2" "sse4" "avx1-" "avx2" "avx512knl" "avx512skx" "neon")
     set(ISPC_HEADER_NAME "${CMAKE_CURRENT_BINARY_DIR}/${ISPC_SRC_NAME}_ispc.h")
     set(ISPC_OBJ_NAME "${CMAKE_CURRENT_BINARY_DIR}/${ISPC_SRC_NAME}_ispc${CMAKE_CXX_OUTPUT_EXTENSION}")
     set(ISPC_FLAGS ${example_ISPC_FLAGS})
@@ -48,10 +48,16 @@ function(add_ispc_example)
         string(STRIP ${ARCH} ARCH)
         execute_process( COMMAND getconf LONG_BIT OUTPUT_VARIABLE ARCH_BIT)
         string(STRIP ${ARCH_BIT} ARCH_BIT)
-        if (${ARCH_BIT} EQUAL 32)
-            set(ISPC_ARCH "x86")
-        else()
-            set(ISPC_ARCH "x86-64")
+        if ("${ARCH}" STREQUAL "x86")
+            if (${ARCH_BIT} EQUAL 32)
+                set(ISPC_ARCH "x86")
+            else()
+                set(ISPC_ARCH "x86-64")
+            endif()
+        elseif ("${ARCH}" STREQUAL "arm")
+            set(ISPC_ARCH "arm")
+        elseif ("${ARCH}" STREQUAL "aarch64")
+            set(ISPC_ARCH "aarch64")
         endif()
         list(APPEND ISPC_FLAGS --pic)
     else()
@@ -76,27 +82,33 @@ function(add_ispc_example)
                         set(OUTPUT_TARGET ${ispc_target})
                         if (${ispc_target} STREQUAL "avx1-")
                             set(OUTPUT_TARGET "avx")
-                        elseif (${ispc_target} STREQUAL "avx1.1")
-                            set(OUTPUT_TARGET "avx11")
                         endif()
                         list(APPEND ISPC_BUILD_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${ISPC_SRC_NAME}_ispc_${OUTPUT_TARGET}.h"
                                     "${CMAKE_CURRENT_BINARY_DIR}/${ISPC_SRC_NAME}_ispc_${OUTPUT_TARGET}${CMAKE_CXX_OUTPUT_EXTENSION}")
                     endif()
                 endforeach()
             endif()
-        elseif ("${ARCH}" STREQUAL "arm")
+        elseif ("${ARCH}" STREQUAL "arm" OR "${ARCH}" STREQUAL "aarch64")
             set(ISPC_TARGETS ${example_ISPC_ARM_TARGETS})
         else()
             message(FATAL_ERROR "Unknown architecture ${ARCH}")
         endif()
     else()
-        set(ISPC_TARGETS ${example_ISPC_IA_TARGETS})
+        if ("${ARCH}" STREQUAL "x86")
+            set(ISPC_TARGETS ${example_ISPC_IA_TARGETS})
+        elseif ("${ARCH}" STREQUAL "arm" OR "${ARCH}" STREQUAL "aarch64")
+            set(ISPC_TARGETS ${example_ISPC_ARM_TARGETS})
+        else()
+            message(FATAL_ERROR "Unknown architecture ${ARCH}")
+        endif()
+
     endif()
     # ISPC command
     add_custom_command(OUTPUT ${ISPC_BUILD_OUTPUT}
         COMMAND ${ISPC_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${ISPC_SRC_NAME}.ispc ${ISPC_FLAGS} --target=${ISPC_TARGETS} --arch=${ISPC_ARCH}
                                    -h ${ISPC_HEADER_NAME} -o ${ISPC_OBJ_NAME}
         VERBATIM
+        DEPENDS ${ISPC_EXECUTABLE}
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${ISPC_SRC_NAME}.ispc")
 
     # To show ispc source in VS solution:
