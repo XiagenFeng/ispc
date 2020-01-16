@@ -133,6 +133,9 @@ function(builtin_to_cpp bit os_name arch supported_archs supported_oses resultFi
                 # -I/Users/Shared/android-ndk-r20/sysroot/usr/include -I/Users/Shared/android-ndk-r20/sysroot/usr/include/x86_64-linux-android
                 set(includePath -I${ISPC_ANDROID_NDK_PATH}/sysroot/usr/include -I${ISPC_ANDROID_NDK_PATH}/sysroot/usr/include/x86_64-linux-android)
             endif()
+        elseif (${os_name} STREQUAL "macos")
+            # -I/iusers/MacOSX10.14.sdk.tar/MacOSX10.14.sdk/usr/include
+            set(includePath -I${CMAKE_OSX_SYSROOT}/usr/include)
         endif()
     else()
          if (${os_name} STREQUAL "macos")
