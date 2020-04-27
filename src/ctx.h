@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2015, Intel Corporation
+  Copyright (c) 2010-2019, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -35,25 +35,15 @@
     @brief %Declaration of the FunctionEmitContext class
 */
 
-#ifndef ISPC_CTX_H
-#define ISPC_CTX_H 1
+#pragma once
 
 #include "ispc.h"
 #include <map>
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-#include <llvm/InstrTypes.h>
-#include <llvm/Instructions.h>
-#else // 3.3+
-#include <llvm/IR/InstrTypes.h>
-#include <llvm/IR/Instructions.h>
-#endif
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_4
-#include <llvm/DIBuilder.h>
-#include <llvm/DebugInfo.h>
-#else // 3.5+
+
 #include <llvm/IR/DIBuilder.h>
 #include <llvm/IR/DebugInfo.h>
-#endif
+#include <llvm/IR/InstrTypes.h>
+#include <llvm/IR/Instructions.h>
 
 struct CFInfo;
 
@@ -302,14 +292,6 @@ class FunctionEmitContext {
     /** generate constantvector, which contains programindex, i.e.
         < i32 0, i32 1, i32 2, i32 3> */
     llvm::Value *ProgramIndexVector(bool is32bits = true);
-#ifdef ISPC_NVPTX_ENABLED
-    llvm::Value *ProgramIndexVectorPTX(bool is32bits = true);
-
-    /** Issues a call to __insert_int8/int16/int32/int64/float/double */
-    llvm::Value *Insert(llvm::Value *vector, llvm::Value *lane, llvm::Value *scalar);
-    /** Issues a call to __extract_int8/int16/int32/int64/float/double */
-    llvm::Value *Extract(llvm::Value *vector, llvm::Value *lane);
-#endif
 
     /** Given a string, create an anonymous global variable to hold its
         value and return the pointer to the string. */
@@ -348,13 +330,8 @@ class FunctionEmitContext {
         llvm::Instruction for convenience; in calling code we often have
         Instructions stored using Value pointers; the code here returns
         silently if it's not actually given an instruction. */
-    void AddDebugPos(llvm::Value *instruction, const SourcePos *pos = NULL,
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-                     llvm::DIScope *scope = NULL);
-#else /* LLVM 3.7+ */
-                     llvm::DIScope *scope = NULL);
+    void AddDebugPos(llvm::Value *instruction, const SourcePos *pos = NULL, llvm::DIScope *scope = NULL);
     // llvm::MDScope *scope = NULL );
-#endif
 
     /** Inform the debugging information generation code that a new scope
         is starting in the source program. */
@@ -366,11 +343,8 @@ class FunctionEmitContext {
 
     /** Returns the llvm::DIScope corresponding to the current program
         scope. */
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIScope GetDIScope() const;
-#else // LLVM 3.7++
+
     llvm::DIScope *GetDIScope() const;
-#endif
 
     /** Emits debugging information for the variable represented by
         sym.  */
@@ -461,6 +435,10 @@ class FunctionEmitContext {
     llvm::Value *AddElementOffset(llvm::Value *basePtr, int elementNum, const Type *ptrType, const char *name = NULL,
                                   const PointerType **resultPtrType = NULL);
 
+    /** Bool is stored as i8 and <WIDTH x i8> but represented in IR as i1 and
+     * <WIDTH x MASK>. This is a helper function to match bool size at storage
+     * interface. */
+    llvm::Value *SwitchBoolSize(llvm::Value *value, llvm::Type *fromType, llvm::Type *toType, const char *name = NULL);
     /** Load from the memory location(s) given by lvalue, using the given
         mask.  The lvalue may be varying, in which case this corresponds to
         a gather from the multiple memory locations given by the array of
@@ -469,7 +447,11 @@ class FunctionEmitContext {
     llvm::Value *LoadInst(llvm::Value *ptr, llvm::Value *mask, const Type *ptrType, const char *name = NULL,
                           bool one_elem = false);
 
-    llvm::Value *LoadInst(llvm::Value *ptr, const char *name = NULL);
+    /* Load from memory location(s) given.
+     * 'type' needs to be provided when storage type is different from IR type. For example,
+     * 'unform bool' is 'i1' in IR but stored as 'i8'.
+     * Otherwise leave this as NULL. */
+    llvm::Value *LoadInst(llvm::Value *ptr, const Type *type = NULL, const char *name = NULL);
 
     /** Emits an alloca instruction to allocate stack storage for the given
         type.  If a non-zero alignment is specified, the object is also
@@ -479,9 +461,22 @@ class FunctionEmitContext {
         the atEntryBlock parameter should be false. */
     llvm::Value *AllocaInst(llvm::Type *llvmType, const char *name = NULL, int align = 0, bool atEntryBlock = true);
 
+    /** Emits an alloca instruction to allocate stack storage for the given
+        type.  If a non-zero alignment is specified, the object is also
+        allocated at the given alignment.  By default, the alloca
+        instruction is added at the start of the function in the entry
+        basic block; if it should be added to the current basic block, then
+        the atEntryBlock parameter should be false.
+        This implementation is preferred when possible. It is needed when
+        storage type is different from IR type. For example,
+        'unform bool' is 'i1' in IR but stored as 'i8'. */
+    llvm::Value *AllocaInst(const Type *ptrType, const char *name = NULL, int align = 0, bool atEntryBlock = true);
+
     /** Standard store instruction; for this variant, the lvalue must be a
-        single pointer, not a varying lvalue. */
-    void StoreInst(llvm::Value *value, llvm::Value *ptr);
+        single pointer, not a varying lvalue.
+        'ptrType' needs to be provided when storage type is different from IR type. For example,
+     * 'unform bool' is 'i1' in IR but stored as 'i8'. */
+    void StoreInst(llvm::Value *value, llvm::Value *ptr, const Type *ptrType = NULL);
 
     /** In this variant of StoreInst(), the lvalue may be varying.  If so,
         this corresponds to a scatter.  Whether the lvalue is uniform of
@@ -655,19 +650,6 @@ class FunctionEmitContext {
         emitted. */
     std::vector<CFInfo *> controlFlowInfo;
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    /** DIFile object corresponding to the source file where the current
-        function was defined (used for debugging info). */
-    llvm::DIFile diFile;
-
-    /** DISubprogram corresponding to this function (used for debugging
-        info). */
-    llvm::DISubprogram diSubprogram;
-
-    /** These correspond to the current set of nested scopes in the
-        function. */
-    std::vector<llvm::DILexicalBlock> debugScopes;
-#else // LLVM 3.7++
     /** DIFile object corresponding to the source file where the current
         function was defined (used for debugging info). */
     llvm::DIFile *diFile;
@@ -679,7 +661,6 @@ class FunctionEmitContext {
     /** These correspond to the current set of nested scopes in the
         function. */
     std::vector<llvm::DIScope *> debugScopes;
-#endif
 
     /** True if a 'launch' statement has been encountered in the function. */
     bool launchedTasks;
@@ -722,5 +703,3 @@ class FunctionEmitContext {
 
     llvm::Value *addVaryingOffsetsIfNeeded(llvm::Value *ptr, const Type *ptrType);
 };
-
-#endif // ISPC_CTX_H

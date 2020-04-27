@@ -1,9 +1,10 @@
-=========================================
-Intel® SPMD Program Compiler User's Guide
-=========================================
+========================
+Intel® ISPC User's Guide
+========================
 
-The Intel® SPMD Program Compiler (``ispc``) is a compiler for writing SPMD
-(single program multiple data) programs to run on the CPU.  The SPMD
+The Intel® Implicit SPMD Program Compiler (Intel® ISPC) is a compiler for
+writing SPMD (single program multiple data) programs to run on the CPU.
+The SPMD
 programming approach is widely known to graphics and GPGPU programmers; it
 is used for GPU shaders and CUDA\* and OpenCL\* kernels, for example.  The
 main idea behind SPMD is that one writes programs as if they were operating
@@ -58,6 +59,7 @@ Contents:
   + `Updating ISPC Programs For Changes In ISPC 1.10.0`_
   + `Updating ISPC Programs For Changes In ISPC 1.11.0`_
   + `Updating ISPC Programs For Changes In ISPC 1.12.0`_
+  + `Updating ISPC Programs For Changes In ISPC 1.13.0`_
 
 * `Getting Started with ISPC`_
 
@@ -186,14 +188,7 @@ Contents:
   + `Data Alignment and Aliasing`_
   + `Restructuring Existing Programs to Use ISPC`_
 
-* `Experimental support for PTX`_
-
-  + `Overview`_
-  + `Compiling For The NVIDIA Kepler GPU`_
-  + `Hints`_
-  + `Limitations & known issues`_
-
-* `Disclaimer and Legal Information`_
+* `Notices & Disclaimers`_
 
 * `Optimization Notice`_
 
@@ -392,9 +387,9 @@ Updating ISPC Programs For Changes In ISPC 1.12.0
 This release contains the following changes that may affect compatibility with
 older versions:
 
-* 'noinline' keyword was added.
+* ``noinline`` keyword was added.
 
-* Standard library functions 'rsqrt_fast()' and 'rcp_fast()' were added.
+* Standard library functions ``rsqrt_fast()`` and ``rcp_fast()`` were added.
 
 * AVX1.1 (IvyBridge) targets and generic KNC and KNL targets were removed. 
   Note that KNL is still supported through avx512knl-i32x16.
@@ -406,6 +401,25 @@ This release introduces experimental cross OS compilation support and ARM/AARCH6
 support. It also contains a new 128-bit AVX2 target (avx2-i32x4) and a CPU
 definition for Ice Lake client (--cpu=icl).
 
+Updating ISPC Programs For Changes In ISPC 1.13.0
+-------------------------------------------------
+
+This release contains the following changes that may affect compatibility with
+older versions:
+
+* Representation of ``bool`` type in storage was changed from target-specific to
+  one byte per boolean value.  So size of ``varying bool`` is target width (in
+  bytes), and size of ``unform bool`` is one.  This definition is compatible
+  with C/C++, hence improves interoperability.
+
+* type aliases for unsigned types were added: ``uint8``, ``uint16``, ``uint32``,
+  ``uint64``, and ``uint``.  To detect if these types are supported you can
+  check if ISPC_UINT_IS_DEFINED macro is defined, this is handy for writing code
+  which works with older versions of ``ispc``.
+
+* ``extract()``/``insert()`` for boolean arguments, and ``abs()`` for all integer and
+  FP types were added to standard library.
+
 Getting Started with ISPC
 =========================
 
@@ -414,10 +428,10 @@ Installing ISPC
 
 The `ispc downloads web page`_ has prebuilt executables for Windows\*,
 Linux\* and macOS\* available for download.  Alternatively, you can
-download the source code from that page and build it yourself; see see the
+download the source code from that page and build it yourself; see the
 `ispc wiki`_ for instructions about building ``ispc`` from source.
 
-.. _ispc downloads web page: downloads.html
+.. _ispc downloads web page: http://ispc.github.io/downloads.html
 .. _ispc wiki: http://github.com/ispc/ispc/wiki
 
 Once you have an executable for your system, copy it into a directory
@@ -711,7 +725,7 @@ Generating Generic C++ Output
 
 In addition to generating object files or assembly output for specific
 targets like NEON, SSE2, SSE4, and AVX, ``ispc`` provides an option to generate
-"generic" C++ output.  This
+"generic" C++ output.
 
 As an example, consider the following simple ``ispc`` program:
 
@@ -801,7 +815,7 @@ preprocessor runs:
   * - ISPC
     - 1
     - Detecting that the ``ispc`` compiler is processing the file
-  * - ISPC_TARGET_{NEON_8, NEON_16, NEON_32, SSE2, SSE4, AVX, AVX2, AVX512KNL, AVX512SKX, GENERIC}
+  * - ISPC_TARGET_{NEON, SSE2, SSE4, AVX, AVX2, AVX512KNL, AVX512SKX, GENERIC}
     - 1
     - One of these will be set, depending on the compilation target.
   * - ISPC_POINTER_SIZE
@@ -811,7 +825,7 @@ preprocessor runs:
     - 1
     - Major version of the ``ispc`` compiler/language
   * - ISPC_MINOR_VERSION
-    - 3
+    - 13
     - Minor version of the ``ispc`` compiler/language
   * - PI
     - 3.1415926535
@@ -822,6 +836,9 @@ preprocessor runs:
   * - TARGET_ELEMENT_WIDTH
     - Element width in bytes, e.g., 4 for i32.
     - Static varying initialization.
+  * - ISPC_UINT_IS_DEFINED
+    - 1.
+    - Detecting if uint8/uint16/uint32/uint64 types are defined in the ISPC version.
 
 ``ispc`` also provides ``#pragma ignore warning`` directives to ignore compiler warnings for individual lines.
 
@@ -1142,7 +1159,7 @@ in the infinite loop in the example above.)
 The way that "varying" function pointers are handled in ``ispc`` is also
 affected by this guarantee: if a function pointer is ``varying``, then it
 has a possibly-different value for all running program instances.  Given a
-call to a varying function pointer, ``ispc`` must maintains as much
+call to a varying function pointer, ``ispc`` must maintain as much
 execution convergence as possible; the assembly code generated finds the
 set of unique function pointers over the currently running program
 instances and calls each one just once, such that the executing program
@@ -1361,8 +1378,7 @@ through the ``launch`` keyword.  (The syntax is documented in the `Task
 Parallelism: "launch" and "sync" Statements`_ section.)  A function called
 with ``launch`` executes asynchronously from the function that called it;
 it may run immediately or it may run concurrently on another processor in
-the system, for example.  (This model is closely modeled on the model
-introduced by Intel® Cilk(tm).)
+the system, for example.
 
 If a function launches multiple tasks, there are no guarantees about the
 order in which the tasks will execute.  Furthermore, multiple launched
@@ -1675,15 +1691,15 @@ basic types:
 * ``bool``: boolean value; may be assigned ``true``, ``false``, or the
   value of a boolean expression.
 * ``int8``: 8-bit signed integer.
-* ``unsigned int8``: 8-bit unsigned integer.
+* ``unsigned int8``: 8-bit unsigned integer; may also be specified as ``uint8``.
 * ``int16``: 16-bit signed integer.
-* ``unsigned int16``: 16-bit unsigned integer.
+* ``unsigned int16``: 16-bit unsigned integer; may also be specified as ``uint16``.
 * ``int``: 32-bit signed integer; may also be specified as ``int32``.
 * ``unsigned int``: 32-bit unsigned integer; may also be specified as
-  ``unsigned int32``.
+  ``unsigned int32``, ``uint32`` or ``uint``.
 * ``float``: 32-bit floating point value
 * ``int64``: 64-bit signed integer.
-* ``unsigned int64``: 64-bit unsigned integer.
+* ``unsigned int64``: 64-bit unsigned integer; may also be specified as ``uint64``.
 * ``double``: 64-bit double-precision floating point value.
 
 There are also a few built-in types related to pointers and memory:
@@ -2433,7 +2449,7 @@ the expected syntax:
 
     struct Foo { int x; float bar[3]; };
     Foo fa[2] = { { 1, { 2, 3, 4 } }, { 10, { 20, 30, 40 } } };
-    // now, fa[1].bar[2] == 30, and so forth
+    // now, fa[1].bar[2] == 40, and so forth
 
 Expressions
 -----------
@@ -2722,7 +2738,7 @@ could instead be written inside a ``foreach_active`` statement:
 
 ::
 
-    foreach_active (i) {
+    foreach_active (index) {
         ++array[index];
     }
 
@@ -3181,11 +3197,11 @@ Task Parallelism: "launch" and "sync" Statements
 
 One option for combining task-parallelism with ``ispc`` is to just use
 regular task parallelism in the C/C++ application code (be it through
-Intel® Cilk(tm), Intel® Thread Building Blocks or another task system), and
+Intel® Thread Building Blocks, OpenMP or another task system), and
 for tasks to use ``ispc`` for SPMD parallelism across the vector lanes as
 appropriate.  Alternatively, ``ispc`` also has support for launching tasks
-from ``ispc`` code.  The approach is similar to Intel® Cilk's task launch
-feature.  (Check the ``examples/mandelbrot_tasks`` example to see how it is used.)
+from ``ispc`` code.  (Check the ``examples/mandelbrot_tasks`` example to
+see how it is used.)
 
 Any function that is launched as a task must be declared with the
 ``task`` qualifier:
@@ -3575,6 +3591,16 @@ is on (i.e. the value is negative) and zero if it is off.
 
     float abs(float a)
     uniform float abs(uniform float a)
+    double abs(double a)
+    uniform double abs(uniform double a)
+    int8 abs(int8 a)
+    uniform int8 abs(uniform int8 a)
+    int16 abs(int16 a)
+    uniform int16 abs(uniform int16 a)
+    int abs(int a)
+    uniform int abs(uniform int a)
+    int64 abs(int64 a)
+    uniform int64 abs(uniform int64 a)
     unsigned int signbits(float x)
 
 Standard rounding functions are provided.  (On machines that support Intel®
@@ -3826,7 +3852,7 @@ be used to get a pseudo-random ``float`` value.
 Random Numbers
 --------------
 
-Some recent CPUs (including those based on the Intel(r) Ivy Bridge
+Some recent CPUs (including those based on the Intel® Ivy Bridge
 micro-architecture), provide support for generating true random numbers.  A
 few standard library functions make this functionality available:
 
@@ -3909,7 +3935,7 @@ the expression evaluates to false at runtime, then a diagnostic error
 message printed and the ``abort()`` function is called.
 
 When called with a ``varying`` quantity, an assertion triggers if the
-expression evaluates to false for any any of the executing program instances
+expression evaluates to false for any of the executing program instances
 at the point where it is called.  Thus, given code like:
 
 ::
@@ -4036,6 +4062,7 @@ element of it as a single ``uniform`` value.  .
 
 ::
 
+    uniform bool extract(bool x, uniform int i)
     uniform int8 extract(int8 x, uniform int i)
     uniform int16 extract(int16 x, uniform int i)
     uniform int32 extract(int32 x, uniform int i)
@@ -4047,6 +4074,7 @@ where the ``i`` th element of ``x`` has been replaced with the value ``v``
 
 ::
 
+    bool insert(bool x, uniform int i, uniform bool v)
     int8 insert(int8 x, uniform int i, uniform int8 v)
     int16 insert(int16 x, uniform int i, uniform int16 v)
     int32 insert(int32 x, uniform int i, uniform int32 v)
@@ -4150,7 +4178,7 @@ If called when none of the program instances are running,
 ``reduce_equal()`` will return ``false``.
 
 There are also a number of functions to compute "scan"s of values across
-the program instances.  For example, the ``exclusive_scan_and()`` function
+the program instances.  For example, the ``exclusive_scan_add()`` function
 computes, for each program instance, the sum of the given value over all of
 the preceding program instances.  (The scans currently available in
 ``ispc`` are all so-called "exclusive" scans, meaning that the value
@@ -4185,6 +4213,10 @@ bitwise-or are available:
     unsigned int32 exclusive_scan_or(unsigned int32 v)
     int64 exclusive_scan_or(int64 v)
     unsigned int64 exclusive_scan_or(unsigned int64 v)
+
+The returned value for the first program instance will be ``0`` for
+``exclusive_scan_add`` and ``exclusive_scan_or``, and have all bits set to
+``1`` for ``exclusive_scan_and``.
 
 The use of exclusive scan to generate variable amounts of output from
 program instances into a compact output buffer is `discussed in the FAQ`_.
@@ -5000,7 +5032,7 @@ have a declaration like:
 
 Because ``varying`` types have size that depends on the size of the gang of
 program instances, ``ispc`` has restrictrictions on using varying types in
-parameters to functions with the ``export`` qualifier.  ``ispc `` prohibits
+parameters to functions with the ``export`` qualifier.  ``ispc`` prohibits
 parameters to exported functions to have varying type unless the parameter is
 of pointer type.  (That is, ``varying float`` isn't allowed, but ``varying float * uniform``
 (uniform pointer to varying float) is permitted.)  Care must be taken
@@ -5125,220 +5157,43 @@ program instances improves performance.
 .. _ispc Performance Tuning Guide: http://ispc.github.com/perfguide.html
 
 
-Experimental support for PTX
-============================
-``ispc`` provides experimental support for PTX code generation which currently
-targets NVIDIA GPUs with compute capability >3.5 [Kepler GPUs with support for
-dynamic parallelism]. Due to its nature, the PTX backend currently impose
-several restrictions on the ``ispc`` program, which will be described below.
+Notices & Disclaimers
+=====================
 
-Overview
---------
-SPMD programming in ``ispc`` is similar to a warp-synchronous CUDA programming.
-Namely, program instances in a gang are equivalent of CUDA threads in a single
-warp. Hence, to run efficiently on a GPU ``ispc`` program must use tasking
-functionality via ``launch`` keyword to ensure multiple number of warps are
-executed concurrently on the GPU.
+Software and workloads used in performance tests may have been optimized for
+performance only on Intel microprocessors.
 
-``export`` functions are equipped with a CUDA C wrapper which schedules a
-single warp--a thread-block with a total of 32 threads. In contract to CPU
-programming, this exported function, either directly or otherwise, should
-utilize ``launch`` keyword to schedule work on a GPU.
+Performance tests, such as SYSmark and MobileMark, are measured using specific
+computer systems, components, software, operations and functions.  Any change
+to any of those factors may cause the results to vary.  You should consult
+other information and performance tests to assist you in fully evaluating your
+contemplated purchases, including the performance of that product when combined
+with other products.   For more complete information visit
+www.intel.com/benchmarks.
 
-At the PTX level, ``launch`` keyword is mapped to CUDA Dynamic Parallelism and
-it schedules a grid of thread-blocks each 4 warps-wide (128 threads).  As a
-result, ``ispc`` has a tasking-granularity of 4 tasks with PTX target; this
-restriction will be eliminated in future.
+Performance results are based on testing as of dates shown in configurations and
+may not reflect all publicly available updates.  See backup for configuration
+details.  No product or component can be absolutely secure.
 
-When passing pointers to an ``export`` function, it is important that they
-remain legal when are accessed from GPU. Prior to CUDA 6.0, such a pointer were
-holding an address that is only accessible from the GPU.  With the release of
-CUDA 6.0, it is possible to pass a pointer to a unified memory allocated with
-``cudaMallocManaged``. Examples provides rudimentary wrapper functions that
-call CUDA API for managed memory allocations, allowing the programmers to avoid
-explicit memory copies.
+Your costs and results may vary.
 
+Intel technologies may require enabled hardware, software or service activation.
 
-
-Compiling For The NVIDIA Kepler GPU
------------------------------------
-Compilation for NVIDIA Kepler GPU is a several step procedure.
-
-First, we need to generate a LLVM assembly from ``ispc`` source file (``ispc``
-generates LLVM assembly instead of bitcode when ``nvptx`` target is chosen):
-
-::
-
-  $ISPC_HOME/ispc foo.ispc --emit-llvm --target=nvptx -o foo.ll
-
-
-This LLVM assembly can immediately be compiled into PTX with the help of
-``ptxgen`` tool; this tool uses ``libNVVM`` which is a part of a CUDA Toolkit.
-
-::
-
-  $ISPC_HOME/ptxtools/ptxgen --use_fast_math foo.ll -o foo.ptx
-
-.. If ``ispc`` is compiled with  LLVM >3.2, the resulting bitcode must first be
-.. decompiled with the ``llvm-dis`` from LLVM 3.2 distribution; this "trick" is
-.. required to generate an IR compatible with libNVVM:
-
-.. ::
-..
-..   $LLVM32/bin/llvm-dis foo.bc -o foo.ll
-..   $ISPC_HOME/ptxtools/ptxgen --use_fast_math foo.ll -o foo.ptx
-
-This PTX is ready for execution on a GPU, for example via CUDA
-Driver API. Alternatively, we also provide a simple ``ptxcc`` tool, which
-compiles the resulting PTX code into an object file:
-
-::
-
-   $ISPC_HOME/ptxtools/ptxcc foo.ptx -o foo_cu.o -Xnvcc="--maxrregcount=64
-   -Xptxas=-v"
-
-This object file can be linked with the main program via ``nvcc``:
-
-::
-
-    nvcc foo_cu.o foo_main.o -o foo
-
-
-Hints
------
-- ``uniform`` arrays in a function scope are statically allocated in
-  ``__shared__`` memory, with all ensuing consequences. For example, if more
-  than avaiable shared memory per SMX is allocated, a link- or runtime-error will occur
-- If ``uniform`` arrays of large size are desired, we recommend to use
-  ``uniform new uniform T[size]`` for their allocation, ideally outside the
-  tasking function (see ``deferred/kernels.ispc`` in the deferred shading example)
-
-Examples that produces executables for CPU, XeonPhi and Kepler GPU display
-several tuning approaches that can benefit GPU performance.
-``ispc`` may also generate performance warning, that if followed, may improve
-GPU application performance.
-
-Limitations & known issues
---------------------------
-Due to its experimental form, PTX code generation is known to impose several
-limitation on the ``ispc`` program which are documented in the following list:
-
-- Must use ``ispc`` tasking functionality to run efficiently on GPU
-- Must use ``new/delete`` and/or ``ispc_malloc``/``ispc_free``/``ispc_memset``/``ispc_memcpy`` to allocate/free/set/copy memory that is visible to GPU
-- ``export`` functions must have ``void`` return type.
-- ``task``/``export`` functions do not accept varying data-types
-- ``new``/``delete`` currently only works with ``uniform`` data-types
-- ``aossoa``/``soaaos`` is not yet supported
-- ``sizeof(varying)`` is not yet unsupported
-- Function pointers do not work yet (may or may not generate compilation fail)
-- ``memset``/``memcpy``/``memmove`` is not yet supported
-- ``uniform`` arrays in global scope are mapped to global memory
-- ``varying`` arrays in global scope are not yet supported
-- ``uniform`` arrays in local  scope are mapped to shared memory
-- ``varying`` arrays in local  scope are mapped to local  memory
-- ``const uniform/varying`` arrays are mapped to local memory
-- ``const static uniform`` arrays are mapped to constant memory
-- ``const static varying``  arrays are mapped to global   memory
-- ``static`` data types in local scope are not allowed; compilation will fail
-- Best performance is obtained with libNVVM (LLVM PTX backend can also be used but it requires libdevice.compute_35.10.bc that comes with libNVVM)
-
-
-Likely there are more... which, together with some of the above-mentioned
-issues, will be fixed in due time.
-
-
-
-Disclaimer and Legal Information
-================================
-
-INFORMATION IN THIS DOCUMENT IS PROVIDED IN CONNECTION WITH INTEL(R) PRODUCTS.
-NO LICENSE, EXPRESS OR IMPLIED, BY ESTOPPEL OR OTHERWISE, TO ANY INTELLECTUAL
-PROPERTY RIGHTS IS GRANTED BY THIS DOCUMENT. EXCEPT AS PROVIDED IN INTEL'S TERMS
-AND CONDITIONS OF SALE FOR SUCH PRODUCTS, INTEL ASSUMES NO LIABILITY WHATSOEVER,
-AND INTEL DISCLAIMS ANY EXPRESS OR IMPLIED WARRANTY, RELATING TO SALE AND/OR USE
-OF INTEL PRODUCTS INCLUDING LIABILITY OR WARRANTIES RELATING TO FITNESS FOR A
-PARTICULAR PURPOSE, MERCHANTABILITY, OR INFRINGEMENT OF ANY PATENT, COPYRIGHT
-OR OTHER INTELLECTUAL PROPERTY RIGHT.
-
-UNLESS OTHERWISE AGREED IN WRITING BY INTEL, THE INTEL PRODUCTS ARE NOT DESIGNED
-NOR INTENDED FOR ANY APPLICATION IN WHICH THE FAILURE OF THE INTEL PRODUCT COULD
-CREATE A SITUATION WHERE PERSONAL INJURY OR DEATH MAY OCCUR.
-
-Intel may make changes to specifications and product descriptions at any time,
-without notice. Designers must not rely on the absence or characteristics of any
-features or instructions marked "reserved" or "undefined." Intel reserves these
-for future definition and shall have no responsibility whatsoever for conflicts
-or incompatibilities arising from future changes to them. The information here
-is subject to change without notice. Do not finalize a design with this
-information.
-
-The products described in this document may contain design defects or errors
-known as errata which may cause the product to deviate from published
-specifications. Current characterized errata are available on request.
-
-Contact your local Intel sales office or your distributor to obtain the latest
-specifications and before placing your product order.
-
-Copies of documents which have an order number and are referenced in this
-document, or other Intel literature, may be obtained by calling 1-800-548-4725,
-or by visiting Intel's Web Site.
-
-Intel processor numbers are not a measure of performance. Processor numbers
-differentiate features within each processor family, not across different
-processor families. See http://www.intel.com/products/processor_number for
-details.
-
-BunnyPeople, Celeron, Celeron Inside, Centrino, Centrino Atom,
-Centrino Atom Inside, Centrino Inside, Centrino logo, Core Inside, FlashFile,
-i960, InstantIP, Intel, Intel logo, Intel386, Intel486, IntelDX2, IntelDX4,
-IntelSX2, Intel Atom, Intel Atom Inside, Intel Core, Intel Inside,
-Intel Inside logo, Intel. Leap ahead., Intel. Leap ahead. logo, Intel NetBurst,
-Intel NetMerge, Intel NetStructure, Intel SingleDriver, Intel SpeedStep,
-Intel StrataFlash, Intel Viiv, Intel vPro, Intel XScale, Itanium,
-Itanium Inside, MCS, MMX, Oplus, OverDrive, PDCharm, Pentium, Pentium Inside,
-skoool, Sound Mark, The Journey Inside, Viiv Inside, vPro Inside, VTune, Xeon,
-and Xeon Inside are trademarks of Intel Corporation in the U.S. and other
-countries.
-
-* Other names and brands may be claimed as the property of others.
-
-Copyright(C) 2011-2019, Intel Corporation. All rights reserved.
+© Intel Corporation.  Intel, the Intel logo, and other Intel marks are
+trademarks of Intel Corporation or its subsidiaries.  Other names and brands may
+be claimed as the property of others.
 
 
 Optimization Notice
 ===================
 
-Intel compilers, associated libraries and associated development tools may
-include or utilize options that optimize for instruction sets that are
-available in both Intel and non-Intel microprocessors (for example SIMD
-instruction sets), but do not optimize equally for non-Intel
-microprocessors.  In addition, certain compiler options for Intel
-compilers, including some that are not specific to Intel
-micro-architecture, are reserved for Intel microprocessors.  For a detailed
-description of Intel compiler options, including the instruction sets and
-specific microprocessors they implicate, please refer to the "Intel
-Compiler User and Reference Guides" under "Compiler Options."  Many library
-routines that are part of Intel compiler products are more highly optimized
-for Intel microprocessors than for other microprocessors.  While the
-compilers and libraries in Intel compiler products offer optimizations for
-both Intel and Intel-compatible microprocessors, depending on the options
-you select, your code and other factors, you likely will get extra
-performance on Intel microprocessors.
-
-Intel compilers, associated libraries and associated development tools may
-or may not optimize to the same degree for non-Intel microprocessors for
-optimizations that are not unique to Intel microprocessors.  These
-optimizations include Intel® Streaming SIMD Extensions 2 (Intel® SSE2),
-Intel® Streaming SIMD Extensions 3 (Intel® SSE3), and Supplemental
-Streaming SIMD Extensions 3 (Intel SSSE3) instruction sets and other
-optimizations.  Intel does not guarantee the availability, functionality,
-or effectiveness of any optimization on microprocessors not manufactured by
-Intel.  Microprocessor-dependent optimizations in this product are intended
-for use with Intel microprocessors.
-
-While Intel believes our compilers and libraries are excellent choices to
-assist in obtaining the best performance on Intel and non-Intel
-microprocessors, Intel recommends that you evaluate other compilers and
-libraries to determine which best meet your requirements.  We hope to win
-your business by striving to offer the best performance of any compiler or
-library; please let us know if you find we do not.
+Intel's compilers may or may not optimize to the same degree for non-Intel
+microprocessors for optimizations that are not unique to Intel microprocessors.
+These optimizations include SSE2, SSE3, and SSSE3 instruction sets and other
+optimizations. Intel does not guarantee the availability, functionality, or
+effectiveness of any optimization on microprocessors not manufactured by Intel.
+Microprocessor-dependent optimizations in this product are intended for use with
+Intel microprocessors. Certain optimizations not specific to Intel
+microarchitecture are reserved for Intel microprocessors. Please refer to the
+applicable product User and Reference Guides for more information regarding the
+specific instruction sets covered by this notice.

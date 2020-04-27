@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2011-2012, Intel Corporation
+  Copyright (c) 2011-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -44,7 +44,6 @@
     - Microsoft's Concurrency Runtime (ISPC_USE_CONCRT)
     - Apple's Grand Central Dispatch (ISPC_USE_GCD)
     - bare pthreads (ISPC_USE_PTHREADS, ISPC_USE_PTHREADS_FULLY_SUBSCRIBED)
-    - Cilk Plus (ISPC_USE_CILK)
     - TBB (ISPC_USE_TBB_TASK_GROUP, ISPC_USE_TBB_PARALLEL_FOR)
     - OpenMP (ISPC_USE_OMP)
     - HPX (ISPC_USE_HPX)
@@ -59,7 +58,6 @@
 #define ISPC_USE_CONCRT
 #define ISPC_USE_PTHREADS
 #define ISPC_USE_PTHREADS_FULLY_SUBSCRIBED
-#define ISPC_USE_CILK
 #define ISPC_USE_OMP
 #define ISPC_USE_TBB_TASK_GROUP
 #define ISPC_USE_TBB_PARALLEL_FOR
@@ -81,12 +79,12 @@
 
 #if !(defined ISPC_USE_CONCRT || defined ISPC_USE_GCD || defined ISPC_USE_PTHREADS ||                                  \
       defined ISPC_USE_PTHREADS_FULLY_SUBSCRIBED || defined ISPC_USE_TBB_TASK_GROUP ||                                 \
-      defined ISPC_USE_TBB_PARALLEL_FOR || defined ISPC_USE_OMP || defined ISPC_USE_CILK || defined ISPC_USE_HPX)
+      defined ISPC_USE_TBB_PARALLEL_FOR || defined ISPC_USE_OMP || defined ISPC_USE_HPX)
 
 // If no task model chosen from the compiler cmdline, pick a reasonable default
 #if defined(_WIN32) || defined(_WIN64)
 #define ISPC_USE_CONCRT
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__FreeBSD__)
 #define ISPC_USE_PTHREADS
 #elif defined(__APPLE__)
 #define ISPC_USE_GCD
@@ -95,7 +93,7 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 #define ISPC_IS_WINDOWS
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__FreeBSD__) // pretty much the same for these purposes
 #define ISPC_IS_LINUX
 #elif defined(__APPLE__)
 #define ISPC_IS_APPLE
@@ -123,7 +121,6 @@ using namespace Concurrency;
 #include <semaphore.h>
 #include <sys/param.h>
 #include <sys/stat.h>
-#include <sys/sysctl.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <vector>
@@ -136,7 +133,6 @@ using namespace Concurrency;
 #include <semaphore.h>
 #include <sys/param.h>
 #include <sys/stat.h>
-#include <sys/sysctl.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <vector>
@@ -149,9 +145,6 @@ using namespace Concurrency;
 #ifdef ISPC_USE_TBB_TASK_GROUP
 #include <tbb/task_group.h>
 #endif // ISPC_USE_TBB_TASK_GROUP
-#ifdef ISPC_USE_CILK
-#include <cilk/cilk.h>
-#endif // ISPC_USE_TBB
 #ifdef ISPC_USE_OMP
 #include <omp.h>
 #endif // ISPC_USE_OMP
@@ -160,7 +153,7 @@ using namespace Concurrency;
 #include <hpx/lcos/wait_all.hpp>
 #endif // ISPC_USE_HPX
 #ifdef ISPC_IS_LINUX
-#include <malloc.h>
+#include <stdlib.h>
 #endif // ISPC_IS_LINUX
 
 #include <algorithm>
@@ -175,10 +168,7 @@ typedef void (*TaskFuncType)(void *data, int threadIndex, int threadCount, int t
                              int taskIndex1, int taskIndex2, int taskCount0, int taskCount1, int taskCount2);
 
 // Small structure used to hold the data for each task
-#ifdef _MSC_VER
-__declspec(align(16))
-#endif
-    struct TaskInfo {
+struct TaskInfo {
     TaskFuncType func;
     void *data;
     int taskIndex;
@@ -193,12 +183,8 @@ __declspec(align(16))
     int taskCount0() const { return taskCount3d[0]; }
     int taskCount1() const { return taskCount3d[1]; }
     int taskCount2() const { return taskCount3d[2]; }
-    TaskInfo() { assert(sizeof(TaskInfo) % 32 == 0); }
-}
-#ifndef _MSC_VER
-__attribute__((aligned(32)));
-#endif
-;
+    TaskInfo() = default;
+};
 
 // ispc expects these functions to have C linkage / not be mangled
 extern "C" {
@@ -434,16 +420,6 @@ class TaskGroup : public TaskGroupBase {
 };
 
 #endif // ISPC_USE_PTHREADS
-
-#ifdef ISPC_USE_CILK
-
-class TaskGroup : public TaskGroupBase {
-  public:
-    void Launch(int baseIndex, int count);
-    void Sync();
-};
-
-#endif // ISPC_USE_CILK
 
 #ifdef ISPC_USE_OMP
 
@@ -695,7 +671,8 @@ static void InitTaskSystem() {
                     bool success = false;
                     srand(time(NULL));
                     for (int i = 0; i < 10; i++) {
-                        sprintf(name, "ispc_task.%d.%d", (int)getpid(), (int)rand());
+                        // Some platforms (e.g. FreeBSD) require the name to begin with a slash
+                        sprintf(name, "/ispc_task.%d.%d", (int)getpid(), (int)rand());
                         workerSemaphore = sem_open(name, O_CREAT, S_IRUSR | S_IWUSR, 0);
                         if (workerSemaphore != SEM_FAILED) {
                             success = true;
@@ -872,30 +849,6 @@ inline void TaskGroup::Sync() {
 }
 
 #endif // ISPC_USE_PTHREADS
-
-///////////////////////////////////////////////////////////////////////////
-// Cilk Plus
-
-#ifdef ISPC_USE_CILK
-
-static void InitTaskSystem() {
-    // No initialization needed
-}
-
-inline void TaskGroup::Launch(int baseIndex, int count) {
-    cilk_for(int i = 0; i < count; i++) {
-        TaskInfo *ti = GetTaskInfo(baseIndex + i);
-
-        // Actually run the task.
-        // Cilk does not expose the task -> thread mapping so we pretend it's 1:1
-        ti->func(ti->data, ti->taskIndex, ti->taskCount(), ti->taskIndex0(), ti->taskIndex1(), ti->taskIndex2(),
-                 ti->taskCount0(), ti->taskCount1(), ti->taskCount2());
-    }
-}
-
-inline void TaskGroup::Sync() {}
-
-#endif // ISPC_USE_CILK
 
 ///////////////////////////////////////////////////////////////////////////
 // OpenMP

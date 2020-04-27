@@ -1,6 +1,6 @@
 // -*- mode: c++ -*-
 /*
-  Copyright (c) 2010-2019, Intel Corporation
+  Copyright (c) 2010-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -56,29 +56,6 @@
 #else
   #error Unknown value of ISPC_MASK_BITS
 #endif
-
-///////////////////////////////////////////////////////////////////////////
-// CUDA Specific primitives
-//
-/***************/
-
-__declspec(safe,cost0) static inline varying int __programIndex() { return __program_index(); }
-__declspec(safe,cost0) static inline uniform int __programCount() { return __program_count(); }
-__declspec(safe,cost0) static inline uniform int __warpIndex()    { return __warp_index();    }
-
-/***************/
-
-__declspec(safe,cost0) static inline uniform int __taskIndex0() { return __task_index0(); }
-__declspec(safe,cost0) static inline uniform int __taskIndex1() { return __task_index1(); }
-__declspec(safe,cost0) static inline uniform int __taskIndex2() { return __task_index2(); }
-__declspec(safe,cost0) static inline uniform int __taskIndex () { return __task_index (); }
-
-/***************/
-
-__declspec(safe,cost0) static inline uniform int __taskCount0() { return __task_count0(); }
-__declspec(safe,cost0) static inline uniform int __taskCount1() { return __task_count1(); }
-__declspec(safe,cost0) static inline uniform int __taskCount2() { return __task_count2(); }
-__declspec(safe,cost0) static inline uniform int __taskCount () { return __task_count (); }
 
 /* Limits of integral types. */
 #ifndef INT8_MAX
@@ -352,6 +329,11 @@ static inline uniform float extract(float x, uniform int i) {
 }
 
 __declspec(safe,cost1)
+static inline uniform bool extract(bool x, uniform int i) {
+    return __extract_bool(x, i);
+}
+
+__declspec(safe,cost1)
 static inline uniform int8 extract(int8 x, uniform int i) {
     return __extract_int8(x, i);
 }
@@ -400,6 +382,11 @@ static inline uniform unsigned int64 extract(unsigned int64 x, uniform int i) {
 __declspec(safe,cost1)
 static inline float insert(float x, uniform int i, uniform float v) {
     return floatbits(__insert_int32((int)intbits(x), i, (int)intbits(v)));
+}
+
+__declspec(safe,cost1)
+static inline bool insert(bool x, uniform int i, uniform bool v) {
+    return __insert_bool(x, i, v);
 }
 
 __declspec(safe,cost1)
@@ -531,10 +518,7 @@ __declspec(safe)
 static inline uniform int popcnt(bool v) {
     // As with any() and all(), only count across the active lanes
 #if (ISPC_MASK_BITS == 1)
-    if (__is_nvptx_target)
-      return __popcnt_int64(__movmsk_ptx(v & __mask));
-    else
-      return __popcnt_int64(__movmsk(v & __mask));
+    return __popcnt_int64(__movmsk(v & __mask));
 #else
     return __popcnt_int64(__movmsk((UIntMaskType)__sext_varying_bool(v) & __mask));
 #endif
@@ -1543,9 +1527,6 @@ static inline uniform double streaming_load_uniform(uniform double a[]) {
 // System information
 
 static inline uniform int num_cores() {
-  if (__is_nvptx_target)
-    return 15*32; // K20/K20X/K40 - 15SMX x 32 warps/smx (max is 64 warps/smx)
-  else
     return __num_cores();
 }
 
@@ -1575,6 +1556,46 @@ static inline uniform bool isnan(uniform double v) {
 __declspec(safe,cost1)
 static inline bool isnan(double v) {
     return v != v;
+}
+
+__declspec(safe,cost1)
+static inline int8 abs(int8 a) {
+    return a > 0 ? a : -a;
+}
+
+__declspec(safe,cost1)
+static inline uniform int8 abs(uniform int8 a) {
+    return a > 0 ? a : -a;
+}
+
+__declspec(safe,cost1)
+static inline int16 abs(int16 a) {
+    return a > 0 ? a : -a;
+}
+
+__declspec(safe,cost1)
+static inline uniform int16 abs(uniform int16 a) {
+    return a > 0 ? a : -a;
+}
+
+__declspec(safe,cost1)
+static inline int abs(int a) {
+    return a > 0 ? a : -a;
+}
+
+__declspec(safe,cost1)
+static inline uniform int abs(uniform int a) {
+    return a > 0 ? a : -a;
+}
+
+__declspec(safe,cost1)
+static inline int64 abs(int64 a) {
+    return a > 0 ? a : -a;
+}
+
+__declspec(safe,cost1)
+static inline uniform int64 abs(uniform int64 a) {
+    return a > 0 ? a : -a;
 }
 
 __declspec(safe,cost1)
@@ -2103,7 +2124,7 @@ static inline void memory_barrier() {
     __memory_barrier();
 }
 
-#define DEFINE_ATOMIC_OP(TA,TB,OPA,OPB,MASKTYPE,TC)                        \
+#define DEFINE_ATOMIC_OP(TA,TB,OPA,OPB,MASKTYPE,TC)                     \
 static inline TA atomic_##OPA##_global(uniform TA * uniform ptr, TA value) { \
     TA ret = __atomic_##OPB##_##TB##_global(ptr, value, (MASKTYPE)__mask); \
     return ret;                                                         \
@@ -2114,29 +2135,20 @@ static inline uniform TA atomic_##OPA##_global(uniform TA * uniform ptr, \
     return ret;                                                         \
 }                                                                       \
 static inline TA atomic_##OPA##_global(uniform TA * varying ptr, TA value) { \
-  if (__is_nvptx_target) {                                            \
-    TA ret = __atomic_##OPB##_varying_##TB##_global((TC)ptr, value, (MASKTYPE)__mask);      \
-    return ret;                                                         \
-  } else {    \
     uniform TA * uniform ptrArray[programCount];                        \
     ptrArray[programIndex] = ptr;                                       \
     TA ret;                                                             \
-    foreach_active (i) {                                              \
+    foreach_active (i) {                                                \
         uniform TA * uniform p = ptrArray[i];                           \
         uniform TA v = extract(value, i);                               \
         uniform TA r = __atomic_##OPB##_uniform_##TB##_global(p, v);    \
         ret = insert(ret, i, r);                                        \
     }                                                                   \
     return ret;                                                         \
-  } \
 }                                                                       \
 
-#define DEFINE_ATOMIC_SWAP(TA,TB,MASKTYPE,TC)                \
+#define DEFINE_ATOMIC_SWAP(TA,TB,MASKTYPE,TC)                           \
 static inline TA atomic_swap_global(uniform TA * uniform ptr, TA value) { \
-  if (__is_nvptx_target) {                                            \
-    TA ret = __atomic_swap_varying_##TB##_global((TC)ptr, value, (MASKTYPE)__mask);      \
-    return ret;                                                         \
-  } else {    \
     uniform int i = 0;                                                  \
     TA ret[programCount];                                               \
     TA memVal;                                                          \
@@ -2167,7 +2179,6 @@ static inline TA atomic_swap_global(uniform TA * uniform ptr, TA value) { \
        originally got back from memory... */                            \
     ret[lastSwap] = memVal;                                             \
     return ret[programIndex];                                           \
-  }\
 }                                                                       \
 static inline uniform TA atomic_swap_global(uniform TA * uniform ptr,   \
                                             uniform TA value) {         \
@@ -2175,24 +2186,19 @@ static inline uniform TA atomic_swap_global(uniform TA * uniform ptr,   \
     return ret;                                                         \
 }                                                                       \
 static inline TA atomic_swap_global(uniform TA * varying ptr, TA value) { \
-  if (__is_nvptx_target) {                                            \
-    TA ret = __atomic_swap_varying_##TB##_global((TC)ptr, value, (MASKTYPE)__mask);      \
-    return ret;                                                         \
-  } else {    \
     uniform TA * uniform ptrArray[programCount];                        \
     ptrArray[programIndex] = ptr;                                       \
     TA ret;                                                             \
-    foreach_active (i) {                                              \
+    foreach_active (i) {                                                \
         uniform TA * uniform p = ptrArray[i];                           \
         uniform TA v = extract(value, i);                               \
         uniform TA r = __atomic_swap_uniform_##TB##_global(p, v);       \
         ret = insert(ret, i, r);                                        \
     }                                                                   \
     return ret;                                                         \
-  }\
 }                                                                       \
 
-#define DEFINE_ATOMIC_MINMAX_OP(TA,TB,OPA,OPB,MASKTYPE,TC)                          \
+#define DEFINE_ATOMIC_MINMAX_OP(TA,TB,OPA,OPB,MASKTYPE,TC)              \
 static inline TA atomic_##OPA##_global(uniform TA * uniform ptr, TA value) { \
     uniform TA oneval = reduce_##OPA(value);                            \
     TA ret;                                                             \
@@ -2207,21 +2213,16 @@ static inline uniform TA atomic_##OPA##_global(uniform TA * uniform ptr, \
 }                                                                       \
 static inline TA atomic_##OPA##_global(uniform TA * varying ptr,        \
                                        TA value) {                      \
-  if (__is_nvptx_target) {                                            \
-    TA ret = __atomic_##OPB##_varying_##TB##_global((TC)ptr, value, (MASKTYPE)__mask);      \
-    return ret;                                                         \
-  } else {    \
     uniform TA * uniform ptrArray[programCount];                        \
     ptrArray[programIndex] = ptr;                                       \
     TA ret;                                                             \
-    foreach_active (i) {                                              \
+    foreach_active (i) {                                                \
         uniform TA * uniform p = ptrArray[i];                           \
         uniform TA v = extract(value, i);                               \
         uniform TA r = __atomic_##OPB##_uniform_##TB##_global(p, v);    \
         ret = insert(ret, i, r);                                        \
     }                                                                   \
     return ret;                                                         \
-  } \
 }
 
 DEFINE_ATOMIC_OP(int32,int32,add,add,IntMaskType,int64)
@@ -2287,10 +2288,6 @@ static inline TA atomic_compare_exchange_global(                           \
 } \
 static inline TA atomic_compare_exchange_global(               \
          uniform TA * varying ptr, TA oldval, TA newval) { \
-  if (__is_nvptx_target) {                                            \
-    TA ret = __atomic_compare_exchange_varying_##TB##_global((TC)ptr, oldval, newval, (MASKTYPE)__mask);      \
-    return ret;                                                         \
-  } else {    \
     uniform TA * uniform ptrArray[programCount];                        \
     ptrArray[programIndex] = ptr;                                       \
     TA ret;                                                             \
@@ -2302,7 +2299,6 @@ static inline TA atomic_compare_exchange_global(               \
         ret = insert(ret, i, r);                                        \
     }                                                                   \
     return ret;                                                         \
-  } \
 }
 
 ATOMIC_DECL_CMPXCHG(int32, int32, IntMaskType,int64)
@@ -2369,7 +2365,7 @@ static inline uniform TYPE atomic_##NAME##_local(uniform TYPE * uniform ptr, \
 }                                                                      \
 static inline TYPE atomic_##NAME##_local(uniform TYPE * uniform ptr, TYPE value) { \
     TYPE ret;                                                          \
-    foreach_active (i) {                                             \
+    foreach_active (i) {                                               \
         ret = insert(ret, i, *ptr);                                    \
         *ptr = OPFUNC(*ptr, extract(value, i));                        \
     }                                                                  \
@@ -2377,20 +2373,12 @@ static inline TYPE atomic_##NAME##_local(uniform TYPE * uniform ptr, TYPE value)
 }                                                                      \
 static inline TYPE atomic_##NAME##_local(uniform TYPE * p, TYPE value) {    \
     TYPE ret;                                                          \
-  if (__is_nvptx_target) {                                            \
-    foreach_active (i) {                                             \
-        uniform TYPE * uniform ptr = (uniform TYPE * uniform)extract((int64)p, i); \
-        ret  = insert(ret, i, *ptr);                                \
-        *ptr = OPFUNC(*ptr, extract(value, i));                \
-    }                                                                  \
-  } else {    \
     uniform TYPE * uniform ptrs[programCount];                         \
     ptrs[programIndex] = p;                                            \
-    foreach_active (i) {                                             \
+    foreach_active (i) {                                               \
         ret = insert(ret, i, *ptrs[i]);                                \
         *ptrs[i] = OPFUNC(*ptrs[i], extract(value, i));                \
     }                                                                  \
-  } \
     return ret;                                                        \
 }
 

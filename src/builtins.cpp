@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2019, Intel Corporation
+  Copyright (c) 2010-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -47,15 +47,9 @@
 
 #include <math.h>
 #include <stdlib.h>
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-#include <llvm/Attributes.h>
-#include <llvm/DerivedTypes.h>
-#include <llvm/Instructions.h>
-#include <llvm/Intrinsics.h>
-#include <llvm/LLVMContext.h>
-#include <llvm/Module.h>
-#include <llvm/Type.h>
-#else
+
+#include <llvm/ADT/Triple.h>
+#include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/IR/Attributes.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Instructions.h>
@@ -63,20 +57,9 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
-#endif
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_5
 #include <llvm/Linker/Linker.h>
-#else
-#include <llvm/Linker.h>
-#endif
-#include <llvm/ADT/Triple.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Target/TargetMachine.h>
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-#include <llvm/Bitcode/ReaderWriter.h>
-#else
-#include <llvm/Bitcode/BitcodeReader.h>
-#endif
 
 extern int yyparse();
 struct yy_buffer_state;
@@ -185,7 +168,7 @@ static bool lCreateISPCSymbol(llvm::Function *func, SymbolTable *symbolTable) {
     noPos.name = "__stdlib";
 
     const llvm::FunctionType *ftype = func->getFunctionType();
-    std::string name = func->getName();
+    std::string name = std::string(func->getName());
 
     if (name.size() < 3 || name[0] != '_' || name[1] != '_')
         return false;
@@ -265,11 +248,7 @@ static void lAddModuleSymbols(llvm::Module *module, SymbolTable *symbolTable) {
 
     llvm::Module::iterator iter;
     for (iter = module->begin(); iter != module->end(); ++iter) {
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_7 /* 3.2, 3.3, 3.4, 3.5, 3.6, 3.7 */
-        llvm::Function *func = iter;
-#else /* LLVM 3.8+ */
         llvm::Function *func = &*iter;
-#endif
         lCreateISPCSymbol(func, symbolTable);
     }
 }
@@ -283,11 +262,7 @@ static void lAddModuleSymbols(llvm::Module *module, SymbolTable *symbolTable) {
 static void lCheckModuleIntrinsics(llvm::Module *module) {
     llvm::Module::iterator iter;
     for (iter = module->begin(); iter != module->end(); ++iter) {
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_7 /* 3.2, 3.3, 3.4, 3.5, 3.6, 3.7 */
-        llvm::Function *func = iter;
-#else /* LLVM 3.8+ */
         llvm::Function *func = &*iter;
-#endif
         if (!func->isIntrinsic())
             continue;
 
@@ -296,9 +271,11 @@ static void lCheckModuleIntrinsics(llvm::Module *module) {
         // check the llvm.x86.* intrinsics for now...
         if (!strncmp(funcName.c_str(), "llvm.x86.", 9)) {
             llvm::Intrinsic::ID id = (llvm::Intrinsic::ID)func->getIntrinsicID();
-            if (id == 0)
-                fprintf(stderr, "FATAL: intrinsic is not found: %s  \n", funcName.c_str());
-            Assert(id != 0);
+            if (id == 0) {
+                std::string error_message = "Intrinsic is not found: ";
+                error_message += funcName;
+                FATAL(error_message.c_str());
+            }
             llvm::Type *intrinsicType = llvm::Intrinsic::getType(*g->ctx, id);
             intrinsicType = llvm::PointerType::get(intrinsicType, 0);
             Assert(func->getType() == intrinsicType);
@@ -333,31 +310,31 @@ static void lSetInternalFunctions(llvm::Module *module) {
         "__aos_to_soa3_double",
         "__aos_to_soa3_double1",
         "__aos_to_soa3_double16",
+        "__aos_to_soa3_double32",
         "__aos_to_soa3_double4",
+        "__aos_to_soa3_double64",
         "__aos_to_soa3_double8",
-        "__aos_to_soa3_int64",
         "__aos_to_soa3_float",
-//#ifdef ISPC_NVPTX_ENABLED
         "__aos_to_soa3_float1",
-//#endif /* ISPC_NVPTX_ENABLED */
         "__aos_to_soa3_float16",
+        "__aos_to_soa3_float32",
         "__aos_to_soa3_float4",
+        "__aos_to_soa3_float64",
         "__aos_to_soa3_float8",
-        "__aos_to_soa3_int32",
         "__aos_to_soa4_double",
         "__aos_to_soa4_double1",
         "__aos_to_soa4_double16",
+        "__aos_to_soa4_double32",
         "__aos_to_soa4_double4",
+        "__aos_to_soa4_double64",
         "__aos_to_soa4_double8",
-        "__aos_to_soa4_int64",
         "__aos_to_soa4_float",
-//#ifdef ISPC_NVPTX_ENABLED
         "__aos_to_soa4_float1",
-//#endif /* ISPC_NVPTX_ENABLED */
         "__aos_to_soa4_float16",
+        "__aos_to_soa4_float32",
         "__aos_to_soa4_float4",
+        "__aos_to_soa4_float64",
         "__aos_to_soa4_float8",
-        "__aos_to_soa4_int32",
         "__atomic_add_int32_global",
         "__atomic_add_int64_global",
         "__atomic_add_uniform_int32_global",
@@ -402,38 +379,6 @@ static void lSetInternalFunctions(llvm::Module *module) {
         "__atomic_xor_int64_global",
         "__atomic_xor_uniform_int32_global",
         "__atomic_xor_uniform_int64_global",
-//#ifdef ISPC_NVPTX_ENABLED
-        "__atomic_add_varying_int32_global",
-        "__atomic_add_varying_int64_global",
-        "__atomic_and_varying_int32_global",
-        "__atomic_and_varying_int64_global",
-        "__atomic_compare_exchange_varying_double_global",
-        "__atomic_compare_exchange_varying_float_global",
-        "__atomic_compare_exchange_varying_int32_global",
-        "__atomic_compare_exchange_varying_int64_global",
-        "__atomic_max_varying_int32_global",
-        "__atomic_max_varying_int64_global",
-        "__atomic_min_varying_int32_global",
-        "__atomic_min_varying_int64_global",
-        "__atomic_or_varying_int32_global",
-        "__atomic_or_varying_int64_global",
-        "__atomic_sub_varying_int32_global",
-        "__atomic_sub_varying_int64_global",
-        "__atomic_swap_varying_double_global",
-        "__atomic_swap_varying_float_global",
-        "__atomic_swap_varying_int32_global",
-        "__atomic_swap_varying_int64_global",
-        "__atomic_umax_varying_uint32_global",
-        "__atomic_umax_varying_uint64_global",
-        "__atomic_umin_varying_uint32_global",
-        "__atomic_umin_varying_uint64_global",
-        "__atomic_xor_uniform_int32_global",
-        "__atomic_xor_uniform_int64_global",
-        "__atomic_xor_varying_int32_global",
-        "__atomic_xor_varying_int64_global",
-        "__atomic_xor_varying_int32_global",
-        "__atomic_xor_varying_int64_global",
-//#endif /* ISPC_NVPTX_ENABLED */
         "__broadcast_double",
         "__broadcast_float",
         "__broadcast_i16",
@@ -459,9 +404,6 @@ static void lSetInternalFunctions(llvm::Module *module) {
         "__do_assert_uniform",
         "__do_assert_varying",
         "__do_print",
-//#ifdef ISPC_NVPTX_ENABLED
-        "__do_print_nvptx",
-//#endif /* ISPC_NVPTX_ENABLED */
         "__doublebits_uniform_int64",
         "__doublebits_varying_int64",
         "__exclusive_scan_add_double",
@@ -472,14 +414,11 @@ static void lSetInternalFunctions(llvm::Module *module) {
         "__exclusive_scan_and_i64",
         "__exclusive_scan_or_i32",
         "__exclusive_scan_or_i64",
+        "__extract_bool",
         "__extract_int16",
         "__extract_int32",
         "__extract_int64",
         "__extract_int8",
-//#ifdef ISPC_NVPTX_ENABLED
-        "__extract_float",
-        "__extract_double",
-//#endif /* ISPC_NVPTX_ENABLED */
         "__extract_mask_low",
         "__extract_mask_hi",
         "__fastmath",
@@ -494,14 +433,11 @@ static void lSetInternalFunctions(llvm::Module *module) {
         "__get_system_isa",
         "__half_to_float_uniform",
         "__half_to_float_varying",
+        "__insert_bool",
         "__insert_int16",
         "__insert_int32",
         "__insert_int64",
         "__insert_int8",
-//#ifdef ISPC_NVPTX_ENABLED
-        "__insert_float",
-        "__insert_double",
-//#endif /* ISPC_NVPTX_ENABLED */
         "__intbits_uniform_double",
         "__intbits_uniform_float",
         "__intbits_varying_double",
@@ -538,9 +474,6 @@ static void lSetInternalFunctions(llvm::Module *module) {
         "__min_varying_uint32",
         "__min_varying_uint64",
         "__movmsk",
-//#ifdef ISPC_NVPTX_ENABLED
-        "__movmsk_ptx",
-//#endif /* ISPC_NVPTX_ENABLED */
         "__new_uniform_32rt",
         "__new_uniform_64rt",
         "__new_varying32_32rt",
@@ -638,31 +571,33 @@ static void lSetInternalFunctions(llvm::Module *module) {
         "__shuffle_i64",
         "__shuffle_i8",
         "__soa_to_aos3_double",
-        "__soa_to_aos3_double16",
-        "__soa_to_aos3_double4",
-        "__soa_to_aos3_double8",
-        "__soa_to_aos3_int64",
-        "__soa_to_aos3_float",
-        "__soa_to_aos3_float16",
-        "__soa_to_aos3_float4",
-        "__soa_to_aos3_float8",
-        "__soa_to_aos3_int32",
-        "__soa_to_aos4_float",
-//#ifdef ISPC_NVPTX_ENABLED
         "__soa_to_aos3_double1",
+        "__soa_to_aos3_double16",
+        "__soa_to_aos3_double32",
+        "__soa_to_aos3_double4",
+        "__soa_to_aos3_double64",
+        "__soa_to_aos3_double8",
+        "__soa_to_aos3_float",
         "__soa_to_aos3_float1",
-        "__soa_to_aos4_float1",
-        "__soa_to_aos4_double1",
-//#endif /* ISPC_NVPTX_ENABLED */
-        "__soa_to_aos4_double16",
-        "__soa_to_aos4_double4",
-        "__soa_to_aos4_double8",
+        "__soa_to_aos3_float16",
+        "__soa_to_aos3_float32",
+        "__soa_to_aos3_float4",
+        "__soa_to_aos3_float64",
+        "__soa_to_aos3_float8",
         "__soa_to_aos4_double",
-        "__soa_to_aos4_int64",
+        "__soa_to_aos4_double1",
+        "__soa_to_aos4_double16",
+        "__soa_to_aos4_double32",
+        "__soa_to_aos4_double4",
+        "__soa_to_aos4_double64",
+        "__soa_to_aos4_double8",
+        "__soa_to_aos4_float",
+        "__soa_to_aos4_float1",
         "__soa_to_aos4_float16",
+        "__soa_to_aos4_float32",
         "__soa_to_aos4_float4",
+        "__soa_to_aos4_float64",
         "__soa_to_aos4_float8",
-        "__soa_to_aos4_int32",
         "__sqrt_uniform_double",
         "__sqrt_uniform_float",
         "__sqrt_varying_double",
@@ -783,27 +718,10 @@ static void lSetInternalFunctions(llvm::Module *module) {
         "__vec4_add_float",
         "__vec4_add_int32",
         "__vselect_float",
-//#ifdef ISPC_NVPTX_ENABLED
-        "__program_index",
-        "__program_count",
-        "__warp_index",
-        "__task_index0",
-        "__task_index1",
-        "__task_index2",
-        "__task_index",
-        "__task_count0",
-        "__task_count1",
-        "__task_count2",
-        "__task_count",
-        "__cvt_loc2gen",
-        "__cvt_loc2gen_var",
-        "__cvt_const2gen",
-        "__puts_nvptx",
+        "__vselect_i32",
         "ISPCAlloc",
         "ISPCLaunch",
-        "ISPCSync",
-//#endif /* ISPC_NVPTX_ENABLED */
-        "__vselect_i32"
+        "ISPCSync"
     };
     // clang-format on
     int count = sizeof(names) / sizeof(names[0]);
@@ -821,45 +739,19 @@ static void lSetInternalFunctions(llvm::Module *module) {
     definitions to the given module.  Functions in the bitcode that can be
     mapped to ispc functions are also added to the symbol table.
 
-    @param bitcode     Binary LLVM bitcode (e.g. the contents of a *.bc file)
-    @param length      Length of the bitcode buffer
+    @param lib         Pointer to BitcodeLib class representing LLVM bitcode (e.g. the contents of a *.bc file)
     @param module      Module to link the bitcode into
     @param symbolTable Symbol table to add definitions to
  */
-void AddBitcodeToModule(const unsigned char *bitcode, int length, llvm::Module *module, SymbolTable *symbolTable,
-                        bool warn) {
-    llvm::StringRef sb = llvm::StringRef((char *)bitcode, length);
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_5
-    llvm::MemoryBuffer *bcBuf = llvm::MemoryBuffer::getMemBuffer(sb);
-#else // LLVM 3.6+
+void AddBitcodeToModule(const BitcodeLib *lib, llvm::Module *module, SymbolTable *symbolTable, bool warn) {
+    llvm::StringRef sb = llvm::StringRef((const char *)lib->getLib(), lib->getSize());
     llvm::MemoryBufferRef bcBuf = llvm::MemoryBuffer::getMemBuffer(sb)->getMemBufferRef();
-#endif
 
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_4_0 // LLVM 4.0+
     llvm::Expected<std::unique_ptr<llvm::Module>> ModuleOrErr = llvm::parseBitcodeFile(bcBuf, *g->ctx);
     if (!ModuleOrErr) {
         Error(SourcePos(), "Error parsing stdlib bitcode: %s", toString(ModuleOrErr.takeError()).c_str());
     } else {
         llvm::Module *bcModule = ModuleOrErr.get().release();
-#elif ISPC_LLVM_VERSION >= ISPC_LLVM_3_7 // LLVM 3.7+
-    llvm::ErrorOr<std::unique_ptr<llvm::Module>> ModuleOrErr = llvm::parseBitcodeFile(bcBuf, *g->ctx);
-    if (std::error_code EC = ModuleOrErr.getError())
-        Error(SourcePos(), "Error parsing stdlib bitcode: %s", EC.message().c_str());
-    else {
-        llvm::Module *bcModule = ModuleOrErr.get().release();
-#elif ISPC_LLVM_VERSION == ISPC_LLVM_3_5 || ISPC_LLVM_VERSION == ISPC_LLVM_3_6
-    llvm::ErrorOr<llvm::Module *> ModuleOrErr = llvm::parseBitcodeFile(bcBuf, *g->ctx);
-    if (std::error_code EC = ModuleOrErr.getError())
-        Error(SourcePos(), "Error parsing stdlib bitcode: %s", EC.message().c_str());
-    else {
-        llvm::Module *bcModule = ModuleOrErr.get();
-#else // LLVM 3.2 - 3.4
-    std::string bcErr;
-    llvm::Module *bcModule = llvm::ParseBitcodeFile(bcBuf, *g->ctx, &bcErr);
-    if (!bcModule)
-        Error(SourcePos(), "Error parsing stdlib bitcode: %s", bcErr.c_str());
-    else {
-#endif
         // FIXME: this feels like a bad idea, but the issue is that when we
         // set the llvm::Module's target triple in the ispc Module::Module
         // constructor, we start by calling llvm::sys::getHostTriple() (and
@@ -871,29 +763,8 @@ void AddBitcodeToModule(const unsigned char *bitcode, int length, llvm::Module *
         llvm::Triple mTriple(m->module->getTargetTriple());
         llvm::Triple bcTriple(bcModule->getTargetTriple());
         Debug(SourcePos(), "module triple: %s\nbitcode triple: %s\n", mTriple.str().c_str(), bcTriple.str().c_str());
-#if defined(ISPC_ARM_ENABLED) && !defined(__arm__)
-        // FIXME: More ugly and dangerous stuff.  We really haven't set up
-        // proper build and runtime infrastructure for ispc to do
-        // cross-compilation, yet it's at minimum useful to be able to emit
-        // ARM code from x86 for ispc development.  One side-effect is that
-        // when the build process turns builtins/builtins.c to LLVM bitcode
-        // for us to link in at runtime, that bitcode has been compiled for
-        // an IA target, which in turn causes the checks in the following
-        // code to (appropraitely) fail.
-        //
-        // In order to be able to have some ability to generate ARM code on
-        // IA, we'll just skip those tests in that case and allow the
-        // setTargetTriple() and setDataLayout() calls below to shove in
-        // the values for an ARM target.  This maybe won't cause problems
-        // in the generated code, since bulitins.c doesn't do anything too
-        // complex w.r.t. struct layouts, etc.
-        if (g->target->getISA() != Target::NEON32 && g->target->getISA() != Target::NEON16 &&
-            g->target->getISA() != Target::NEON8)
-#endif // !__arm__
-#ifdef ISPC_NVPTX_ENABLED
-            if (g->target->getISA() != Target::NVPTX)
-#endif      /* ISPC_NVPTX_ENABLED */
-            // Disable this code for cross compilation
+
+        // Disable this code for cross compilation
 #if 0
             {
                 Assert(bcTriple.getArch() == llvm::Triple::UnknownArch || mTriple.getArch() == bcTriple.getArch());
@@ -906,7 +777,6 @@ void AddBitcodeToModule(const unsigned char *bitcode, int length, llvm::Module *
                 // architecture and investigate what happened.
                 // Generally we allow library DataLayout to be subset of module
                 // DataLayout or library DataLayout to be empty.
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_5
                 if (!VerifyDataLayoutCompatibility(module->getDataLayoutStr(), bcModule->getDataLayoutStr()) && warn) {
                     Warning(SourcePos(),
                             "Module DataLayout is incompatible with "
@@ -915,33 +785,16 @@ void AddBitcodeToModule(const unsigned char *bitcode, int length, llvm::Module *
                             "Library DL: %s\n",
                             module->getDataLayoutStr().c_str(), bcModule->getDataLayoutStr().c_str());
                 }
-#else
-                if (!VerifyDataLayoutCompatibility(module->getDataLayout(), bcModule->getDataLayout()) && warn) {
-                    Warning(SourcePos(),
-                            "Module DataLayout is incompatible with "
-                            "library DataLayout:\n"
-                            "Module  DL: %s\n"
-                            "Library DL: %s\n",
-                            module->getDataLayout().c_str(), bcModule->getDataLayout().c_str());
-                }
-#endif
             }
 #endif
-                bcModule->setTargetTriple(mTriple.str());
+
+        bcModule->setTargetTriple(mTriple.str());
         bcModule->setDataLayout(module->getDataLayout());
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_5 // 3.2-3.5
-        std::string(linkError);
-
-        if (llvm::Linker::LinkModules(module, bcModule, llvm::Linker::DestroySource, &linkError))
-            Error(SourcePos(), "Error linking stdlib bitcode: %s", linkError.c_str());
-#elif ISPC_LLVM_VERSION <= ISPC_LLVM_3_7 // 3.6-3.7
-        llvm::Linker::LinkModules(module, bcModule);
-#else                                    // LLVM 3.8+
-                                         // A hack to move over declaration, which have no definition.
-                                         // New linker is kind of smart and think it knows better what to do, so
-                                         // it removes unused declarations without definitions.
-                                         // This trick should be legal, as both modules use the same LLVMContext.
+        // A hack to move over declaration, which have no definition.
+        // New linker is kind of smart and think it knows better what to do, so
+        // it removes unused declarations without definitions.
+        // This trick should be legal, as both modules use the same LLVMContext.
         for (llvm::Function &f : *bcModule) {
             if (f.isDeclaration()) {
                 // Declarations with uses will be moved by Linker.
@@ -955,7 +808,6 @@ void AddBitcodeToModule(const unsigned char *bitcode, int length, llvm::Module *
         if (llvm::Linker::linkModules(*module, std::move(M))) {
             Error(SourcePos(), "Error linking stdlib bitcode.");
         }
-#endif
 
         lSetInternalFunctions(module);
         if (symbolTable != NULL)
@@ -973,58 +825,27 @@ static void lDefineConstantInt(const char *name, int val, llvm::Module *module, 
     sym->constValue = new ConstExpr(sym->type, val, SourcePos());
     llvm::Type *ltype = LLVMTypes::Int32Type;
     llvm::Constant *linit = LLVMInt32(val);
-#if ISPC_LLVM_VERSION < ISPC_LLVM_3_6
-    // Use WeakODRLinkage rather than InternalLinkage so that a definition
-    // survives even if it's not used in the module, so that the symbol is
-    // there in the debugger.
-    llvm::GlobalValue::LinkageTypes linkage =
-        g->generateDebuggingSymbols ? llvm::GlobalValue::WeakODRLinkage : llvm::GlobalValue::InternalLinkage;
-    sym->storagePtr = new llvm::GlobalVariable(*module, ltype, true, linkage, linit, name);
-#else // LLVM 3.6+
     auto GV = new llvm::GlobalVariable(*module, ltype, true, llvm::GlobalValue::InternalLinkage, linit, name);
     dbg_sym.push_back(GV);
     sym->storagePtr = GV;
-#endif
     symbolTable->AddVariable(sym);
 
     if (m->diBuilder != NULL) {
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-        llvm::DIFile file;
-        llvm::DIType diType = sym->type->GetDIType(file);
-        Assert(diType.Verify());
-#else // LLVM 3.7+
         llvm::DIFile *file = m->diCompileUnit->getFile();
         llvm::DICompileUnit *cu = m->diCompileUnit;
         llvm::DIType *diType = sym->type->GetDIType(file);
-#endif
         // FIXME? DWARF says that this (and programIndex below) should
         // have the DW_AT_artifical attribute.  It's not clear if this
         // matters for anything though.
-
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_5
-        llvm::DIGlobalVariable var =
-            m->diBuilder->createGlobalVariable(name, file, 0 /* line */, diType, true /* static */, sym->storagePtr);
-#elif ISPC_LLVM_VERSION == ISPC_LLVM_3_6                                       // LLVM 3.6
-        llvm::Constant *sym_const_storagePtr = llvm::dyn_cast<llvm::Constant>(sym->storagePtr);
-        Assert(sym_const_storagePtr);
-        llvm::DIGlobalVariable var = m->diBuilder->createGlobalVariable(file, name, name, file, 0 /* line */, diType,
-                                                                        true /* static */, sym_const_storagePtr);
-#elif ISPC_LLVM_VERSION >= ISPC_LLVM_3_7 && ISPC_LLVM_VERSION <= ISPC_LLVM_3_9 // LLVM 3.7 - 3.9
-        llvm::Constant *sym_const_storagePtr = llvm::dyn_cast<llvm::Constant>(sym->storagePtr);
-        Assert(sym_const_storagePtr);
-        m->diBuilder->createGlobalVariable(cu, name, name, file, 0 /* line */, diType, true /* static */,
-                                           sym_const_storagePtr);
-#else                                                                          // LLVM 4.0+
         llvm::GlobalVariable *sym_GV_storagePtr = llvm::dyn_cast<llvm::GlobalVariable>(sym->storagePtr);
         llvm::DIGlobalVariableExpression *var =
             m->diBuilder->createGlobalVariableExpression(cu, name, name, file, 0 /* line */, diType, true /* static */);
         sym_GV_storagePtr->addDebugInfo(var);
-#endif
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-        Assert(var.Verify());
-#else // LLVM 3.7+
-      // coming soon
-#endif
+        /*#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
+                Assert(var.Verify());
+        #else // LLVM 3.7+
+              // coming soon
+        #endif*/
     }
 }
 
@@ -1037,11 +858,7 @@ static void lDefineConstantIntFunc(const char *name, int val, llvm::Module *modu
     llvm::Function *func = module->getFunction(name);
     dbg_sym.push_back(func);
     Assert(func != NULL); // it should be declared already...
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-    func->addFnAttr(llvm::Attributes::AlwaysInline);
-#else // LLVM 3.3+
     func->addFnAttr(llvm::Attribute::AlwaysInline);
-#endif
     llvm::BasicBlock *bblock = llvm::BasicBlock::Create(*g->ctx, "entry", func, 0);
     llvm::ReturnInst::Create(*g->ctx, LLVMInt32(val), bblock);
 
@@ -1060,58 +877,29 @@ static void lDefineProgramIndex(llvm::Module *module, SymbolTable *symbolTable,
 
     llvm::Type *ltype = LLVMTypes::Int32VectorType;
     llvm::Constant *linit = LLVMInt32Vector(pi);
-#if ISPC_LLVM_VERSION < ISPC_LLVM_3_6
-    // See comment in lDefineConstantInt() for why WeakODRLinkage is used here
-    llvm::GlobalValue::LinkageTypes linkage =
-        g->generateDebuggingSymbols ? llvm::GlobalValue::WeakODRLinkage : llvm::GlobalValue::InternalLinkage;
-    sym->storagePtr = new llvm::GlobalVariable(*module, ltype, true, linkage, linit, sym->name.c_str());
-#else // LLVM 3.6+
+
     auto GV =
         new llvm::GlobalVariable(*module, ltype, true, llvm::GlobalValue::InternalLinkage, linit, sym->name.c_str());
     dbg_sym.push_back(GV);
     sym->storagePtr = GV;
-#endif
     symbolTable->AddVariable(sym);
 
     if (m->diBuilder != NULL) {
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-        llvm::DIFile file;
-        llvm::DIType diType = sym->type->GetDIType(file);
-        Assert(diType.Verify());
-#else // LLVM 3.7+
         llvm::DIFile *file = m->diCompileUnit->getFile();
         llvm::DICompileUnit *cu = m->diCompileUnit;
         llvm::DIType *diType = sym->type->GetDIType(file);
-#endif
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_6 // LLVM 3.6
-        llvm::Constant *sym_const_storagePtr = llvm::dyn_cast<llvm::Constant>(sym->storagePtr);
-        Assert(sym_const_storagePtr);
-        llvm::DIGlobalVariable var =
-            m->diBuilder->createGlobalVariable(file, sym->name.c_str(), sym->name.c_str(), file, 0 /* line */, diType,
-                                               false /* static */, sym_const_storagePtr);
-#elif ISPC_LLVM_VERSION <= ISPC_LLVM_3_5
-        llvm::DIGlobalVariable var = m->diBuilder->createGlobalVariable(sym->name.c_str(), file, 0 /* line */, diType,
-                                                                        false /* static */, sym->storagePtr);
-#elif ISPC_LLVM_VERSION >= ISPC_LLVM_3_7 && ISPC_LLVM_VERSION <= ISPC_LLVM_3_9 // LLVM 3.7 - 3.9
-        llvm::Constant *sym_const_storagePtr = llvm::dyn_cast<llvm::Constant>(sym->storagePtr);
-        Assert(sym_const_storagePtr);
-        m->diBuilder->createGlobalVariable(cu, sym->name.c_str(), sym->name.c_str(), file, 0 /* line */, diType,
-                                           false /* static */, sym_const_storagePtr);
-#else                                                                          // LLVM 4.0+
         llvm::GlobalVariable *sym_GV_storagePtr = llvm::dyn_cast<llvm::GlobalVariable>(sym->storagePtr);
         llvm::DIGlobalVariableExpression *var = m->diBuilder->createGlobalVariableExpression(
             cu, sym->name.c_str(), sym->name.c_str(), file, 0 /* line */, diType, false /* static */);
         sym_GV_storagePtr->addDebugInfo(var);
-#endif
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-        Assert(var.Verify());
-#else // LLVM 3.7+
-      // coming soon
-#endif
+        /*#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
+                Assert(var.Verify());
+        #else // LLVM 3.7+
+              // coming soon
+        #endif*/
     }
 }
 
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_6 // LLVM 3.6+
 static void emitLLVMUsed(llvm::Module &module, std::vector<llvm::Constant *> &list) {
     // Convert list to what ConstantArray needs.
     llvm::SmallVector<llvm::Constant *, 8> UsedArray;
@@ -1128,26 +916,13 @@ static void emitLLVMUsed(llvm::Module &module, std::vector<llvm::Constant *> &li
 
     GV->setSection("llvm.metadata");
 }
-#endif
 
 void DefineStdlib(SymbolTable *symbolTable, llvm::LLVMContext *ctx, llvm::Module *module, bool includeStdlibISPC) {
     // debug_symbols are symbols that supposed to be preserved in debug information.
     // They will be referenced in llvm.used intrinsic to prevent they removal from
     // the object file.
     std::vector<llvm::Constant *> debug_symbols;
-    bool runtime32 = g->target->is32Bit();
     bool warn = g->target->getISA() != Target::GENERIC;
-    bool target_is_windows = g->target_os == TargetOS::OS_WINDOWS;
-
-#define EXPORT_MODULE_COND_WARN(export_module, warnings)                                                               \
-    extern const unsigned char export_module[];                                                                        \
-    extern int export_module##_length;                                                                                 \
-    AddBitcodeToModule(export_module, export_module##_length, module, symbolTable, warnings);
-
-#define EXPORT_MODULE(export_module)                                                                                   \
-    extern const unsigned char export_module[];                                                                        \
-    extern int export_module##_length;                                                                                 \
-    AddBitcodeToModule(export_module, export_module##_length, module, symbolTable, true);
 
     // Add the definitions from the compiled builtins.c file.
     // When compiling for "generic" target family, data layout warnings for
@@ -1157,664 +932,20 @@ void DefineStdlib(SymbolTable *symbolTable, llvm::LLVMContext *ctx, llvm::Module
 
     // Unlike regular builtins and dispatch module, which don't care about mangling of external functions,
     // so they only differentiate Windows/Unix and 32/64 bit, builtins-c need to take care about mangling.
-    // Hence, different version for all potentially supported OSes. Those that are not supported in current
-    // build are will have zero length.
-
-    switch (g->target_os) {
-    case TargetOS::OS_WINDOWS:
-        if (runtime32) {
-            EXPORT_MODULE_COND_WARN(builtins_bitcode_windows_i386_c_32bit, warn);
-        } else {
-            EXPORT_MODULE_COND_WARN(builtins_bitcode_windows_x86_64_c_64bit, warn);
-        }
-        break;
-    case TargetOS::OS_LINUX:
-        if (runtime32) {
-            if (g->target->getArch() == "x86") {
-                EXPORT_MODULE_COND_WARN(builtins_bitcode_linux_i386_c_32bit, warn);
-            }
-            if (g->target->getArch() == "arm") {
-                EXPORT_MODULE_COND_WARN(builtins_bitcode_linux_armv7_c_32bit, warn);
-            }
-        } else {
-            if (g->target->getArch() == "x86-64") {
-                EXPORT_MODULE_COND_WARN(builtins_bitcode_linux_x86_64_c_64bit, warn);
-            }
-            if (g->target->getArch() == "aarch64") {
-                EXPORT_MODULE_COND_WARN(builtins_bitcode_linux_aarch64_c_64bit, warn);
-            }
-        }
-        break;
-    case TargetOS::OS_MAC:
-        if (runtime32) {
-            Error(SourcePos(), "doesn't exist");
-            EXPORT_MODULE_COND_WARN(builtins_bitcode_macos_i386_c_32bit, warn);
-        } else {
-            EXPORT_MODULE_COND_WARN(builtins_bitcode_macos_x86_64_c_64bit, warn);
-        }
-        break;
-    case TargetOS::OS_ANDROID:
-        if (runtime32) {
-            if (g->target->getArch() == "x86") {
-                EXPORT_MODULE_COND_WARN(builtins_bitcode_android_i386_c_32bit, warn);
-            }
-            if (g->target->getArch() == "arm") {
-                EXPORT_MODULE_COND_WARN(builtins_bitcode_android_armv7_c_32bit, warn);
-            }
-        } else {
-            if (g->target->getArch() == "x86-64") {
-                EXPORT_MODULE_COND_WARN(builtins_bitcode_android_x86_64_c_64bit, warn);
-            }
-            if (g->target->getArch() == "aarch64") {
-                EXPORT_MODULE_COND_WARN(builtins_bitcode_android_aarch64_c_64bit, warn);
-            }
-        }
-        break;
-    case TargetOS::OS_IOS:
-        if (runtime32) {
-            Error(SourcePos(), "doesn't exist");
-            EXPORT_MODULE_COND_WARN(builtins_bitcode_ios_i386_c_32bit, warn);
-        } else {
-            EXPORT_MODULE_COND_WARN(builtins_bitcode_ios_arm64_c_64bit, warn);
-        }
-        break;
-    case TargetOS::OS_PS4:
-        if (runtime32) {
-            Error(SourcePos(), "doesn't exist");
-            EXPORT_MODULE_COND_WARN(builtins_bitcode_ps4_i386_c_32bit, warn);
-        } else {
-            EXPORT_MODULE_COND_WARN(builtins_bitcode_ps4_x86_64_c_64bit, warn);
-        }
-        break;
-    default:
-        Error(SourcePos(), "Unsupported OS\n");
-    }
-
-    // NVPTX target is depricated and will be removed soon.
-    /*
-    #ifdef ISPC_NVPTX_ENABLED
-        case Target::NVPTX: {
-            if (runtime32) {
-                fprintf(stderr, "Unfortunatly 32bit targets are not supported at the moment .. \n");
-                assert(0);
-            } else {
-                EXPORT_MODULE(builtins_bitcode_nvptx_64bit);
-            }
-            break;
-        };
-    #endif
-    */
+    // Hence, different version for all potentially supported OSes.
+    const BitcodeLib *builtins = g->target_registry->getBuiltinsCLib(g->target_os, g->target->getArch());
+    Assert(builtins);
+    AddBitcodeToModule(builtins, module, symbolTable, warn);
 
     // Next, add the target's custom implementations of the various needed
     // builtin functions (e.g. __masked_store_32(), etc).
-    if (target_is_windows) {
-#ifdef ISPC_HOST_IS_WINDOWS // supported only on Windows
-        switch (g->target->getISA()) {
-#ifdef ISPC_ARM_ENABLED
-        case Target::NEON8: {
-            if (runtime32) {
-                EXPORT_MODULE(builtins_bitcode_win_neon_i8x16_32bit);
-            } else {
-                EXPORT_MODULE(builtins_bitcode_win_neon_i8x16_64bit);
-            }
-            break;
-        }
-        case Target::NEON16: {
-            if (runtime32) {
-                EXPORT_MODULE(builtins_bitcode_win_neon_i16x8_32bit);
-            } else {
-                EXPORT_MODULE(builtins_bitcode_win_neon_i16x8_64bit);
-            }
-            break;
-        }
-        case Target::NEON32: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_neon_i32x4_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_neon_i32x4_64bit);
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_neon_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_neon_i32x8_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-#endif
-        case Target::SSE2: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_sse2_i32x4_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_sse2_i32x4_64bit);
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_sse2_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_sse2_i32x8_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-        case Target::SSE4: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_sse4_i32x4_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_sse4_i32x4_64bit);
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    if (g->target->getMaskBitCount() == 16) {
-                        EXPORT_MODULE(builtins_bitcode_win_sse4_i16x8_32bit);
-                    } else {
-                        Assert(g->target->getMaskBitCount() == 32);
-                        EXPORT_MODULE(builtins_bitcode_win_sse4_i32x8_32bit);
-                    }
-                } else {
-                    if (g->target->getMaskBitCount() == 16) {
-                        EXPORT_MODULE(builtins_bitcode_win_sse4_i16x8_64bit);
-                    } else {
-                        Assert(g->target->getMaskBitCount() == 32);
-                        EXPORT_MODULE(builtins_bitcode_win_sse4_i32x8_64bit);
-                    }
-                }
-                break;
-            case 16:
-                Assert(g->target->getMaskBitCount() == 8);
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_sse4_i8x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_sse4_i8x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-        case Target::AVX: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (g->target->getDataTypeWidth() == 32) {
-                    // Note here that for avx1-i32x4 we are using bitcode file for
-                    // sse4-i32x4. This is intentional and good enough.
-                    // AVX target implies appropriate target-feature attrbute,
-                    // which forces LLVM to generate AVX code, even for SSE4
-                    // intrinsics. Except that the only "missing" feature in sse4
-                    // target is implemenation of __masked_[store|load]_[i32|i64]
-                    // using maskmov instruction. But it's not very popular
-                    // intrinsics, so we assume the implementation to be good
-                    // enough at the moment.
-                    if (runtime32) {
-                        EXPORT_MODULE(builtins_bitcode_win_sse4_i32x4_32bit);
-                    } else {
-                        EXPORT_MODULE(builtins_bitcode_win_sse4_i32x4_64bit);
-                    }
-                } else if (g->target->getDataTypeWidth() == 64) {
-                    if (runtime32) {
-                        EXPORT_MODULE(builtins_bitcode_win_avx1_i64x4_32bit);
-                    } else {
-                        EXPORT_MODULE(builtins_bitcode_win_avx1_i64x4_64bit);
-                    }
-                } else {
-                    FATAL("logic error in DefineStdlib");
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_avx1_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_avx1_i32x8_64bit);
-                }
-                break;
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_avx1_i32x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_avx1_i32x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-        case Target::AVX2: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (g->target->getDataTypeWidth() == 32) {
-                    if (runtime32) {
-                        EXPORT_MODULE(builtins_bitcode_win_avx2_i32x4_32bit);
-                    } else {
-                        EXPORT_MODULE(builtins_bitcode_win_avx2_i32x4_64bit);
-                    }
-                } else if (g->target->getDataTypeWidth() == 64) {
-                    if (runtime32) {
-                        EXPORT_MODULE(builtins_bitcode_win_avx2_i64x4_32bit);
-                    } else {
-                        EXPORT_MODULE(builtins_bitcode_win_avx2_i64x4_64bit);
-                    }
-                } else {
-                    FATAL("logic error in DefineStdlib");
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_avx2_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_avx2_i32x8_64bit);
-                }
-                break;
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_avx2_i32x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_avx2_i32x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_7 // LLVM 3.7+
-        case Target::KNL_AVX512: {
-            switch (g->target->getVectorWidth()) {
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_avx512knl_i32x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_avx512knl_i32x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-#endif
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_8 // LLVM 3.8+
-        case Target::SKX_AVX512: {
-            switch (g->target->getVectorWidth()) {
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_avx512skx_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_avx512skx_i32x8_64bit);
-                }
-                break;
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_avx512skx_i32x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_avx512skx_i32x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-#endif
-        case Target::GENERIC: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_4_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_4_64bit);
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_8_64bit);
-                }
-                break;
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_16_64bit);
-                }
-                break;
-            case 32:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_32_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_32_64bit);
-                }
-                break;
-            case 64:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_64_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_64_64bit);
-                }
-                break;
-            case 1:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_1_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_win_generic_1_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-        default:
-            FATAL("logic error");
-        }
-#endif
-    } else {
-        switch (g->target->getISA()) {
-#ifdef ISPC_ARM_ENABLED
-        case Target::NEON8: {
-            if (runtime32) {
-                EXPORT_MODULE(builtins_bitcode_unix_neon_i8x16_32bit);
-            } else {
-                EXPORT_MODULE(builtins_bitcode_unix_neon_i8x16_64bit);
-            }
-            break;
-        }
-        case Target::NEON16: {
-            if (runtime32) {
-                EXPORT_MODULE(builtins_bitcode_unix_neon_i16x8_32bit);
-            } else {
-                EXPORT_MODULE(builtins_bitcode_unix_neon_i16x8_64bit);
-            }
-            break;
-        }
-        case Target::NEON32: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_neon_i32x4_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_neon_i32x4_64bit);
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_neon_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_neon_i32x8_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-#endif
-        case Target::SSE2: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_sse2_i32x4_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_sse2_i32x4_64bit);
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_sse2_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_sse2_i32x8_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-        case Target::SSE4: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_sse4_i32x4_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_sse4_i32x4_64bit);
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    if (g->target->getMaskBitCount() == 16) {
-                        EXPORT_MODULE(builtins_bitcode_unix_sse4_i16x8_32bit);
-                    } else {
-                        Assert(g->target->getMaskBitCount() == 32);
-                        EXPORT_MODULE(builtins_bitcode_unix_sse4_i32x8_32bit);
-                    }
-                } else {
-                    if (g->target->getMaskBitCount() == 16) {
-                        EXPORT_MODULE(builtins_bitcode_unix_sse4_i16x8_64bit);
-                    } else {
-                        Assert(g->target->getMaskBitCount() == 32);
-                        EXPORT_MODULE(builtins_bitcode_unix_sse4_i32x8_64bit);
-                    }
-                }
-                break;
-            case 16:
-                Assert(g->target->getMaskBitCount() == 8);
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_sse4_i8x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_sse4_i8x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-        case Target::AVX: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (g->target->getDataTypeWidth() == 32) {
-                    // Note here that for avx1-i32x4 we are using bitcode file for
-                    // sse4-i32x4. This is intentional and good enough.
-                    // AVX target implies appropriate target-feature attrbute,
-                    // which forces LLVM to generate AVX code, even for SSE4
-                    // intrinsics. Except that the only "missing" feature in sse4
-                    // target is implemenation of __masked_[store|load]_[i32|i64]
-                    // using maskmov instruction. But it's not very popular
-                    // intrinsics, so we assume the implementation to be good
-                    // enough at the moment.
-                    if (runtime32) {
-                        EXPORT_MODULE(builtins_bitcode_unix_sse4_i32x4_32bit);
-                    } else {
-                        EXPORT_MODULE(builtins_bitcode_unix_sse4_i32x4_64bit);
-                    }
-                } else if (g->target->getDataTypeWidth() == 64) {
-                    if (runtime32) {
-                        EXPORT_MODULE(builtins_bitcode_unix_avx1_i64x4_32bit);
-                    } else {
-                        EXPORT_MODULE(builtins_bitcode_unix_avx1_i64x4_64bit);
-                    }
-                } else {
-                    FATAL("logic error in DefineStdlib");
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx1_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx1_i32x8_64bit);
-                }
-                break;
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx1_i32x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx1_i32x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-        case Target::AVX2: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (g->target->getDataTypeWidth() == 32) {
-                    if (runtime32) {
-                        EXPORT_MODULE(builtins_bitcode_unix_avx2_i32x4_32bit);
-                    } else {
-                        EXPORT_MODULE(builtins_bitcode_unix_avx2_i32x4_64bit);
-                    }
-                } else if (g->target->getDataTypeWidth() == 64) {
-                    if (runtime32) {
-                        EXPORT_MODULE(builtins_bitcode_unix_avx2_i64x4_32bit);
-                    } else {
-                        EXPORT_MODULE(builtins_bitcode_unix_avx2_i64x4_64bit);
-                    }
-                } else {
-                    FATAL("logic error in DefineStdlib");
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx2_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx2_i32x8_64bit);
-                }
-                break;
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx2_i32x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx2_i32x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_7 // LLVM 3.7+
-        case Target::KNL_AVX512: {
-            switch (g->target->getVectorWidth()) {
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx512knl_i32x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx512knl_i32x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-#endif
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_8 // LLVM 3.8+
-        case Target::SKX_AVX512: {
-            switch (g->target->getVectorWidth()) {
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx512skx_i32x8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx512skx_i32x8_64bit);
-                }
-                break;
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx512skx_i32x16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_avx512skx_i32x16_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-#endif
-        case Target::GENERIC: {
-            switch (g->target->getVectorWidth()) {
-            case 4:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_4_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_4_64bit);
-                }
-                break;
-            case 8:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_8_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_8_64bit);
-                }
-                break;
-            case 16:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_16_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_16_64bit);
-                }
-                break;
-            case 32:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_32_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_32_64bit);
-                }
-                break;
-            case 64:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_64_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_64_64bit);
-                }
-                break;
-            case 1:
-                if (runtime32) {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_1_32bit);
-                } else {
-                    EXPORT_MODULE(builtins_bitcode_unix_generic_1_64bit);
-                }
-                break;
-            default:
-                FATAL("logic error in DefineStdlib");
-            }
-            break;
-        }
-        default:
-            FATAL("logic error");
-        }
-    }
+    const BitcodeLib *target =
+        g->target_registry->getISPCTargetLib(g->target->getISPCTarget(), g->target_os, g->target->getArch());
+    Assert(target);
+    AddBitcodeToModule(target, module, symbolTable, true);
 
     // define the 'programCount' builtin variable
-#ifdef ISPC_NVPTX_ENABLED
-    if (g->target->getISA() == Target::NVPTX) {
-        lDefineConstantInt("programCount", 32, module, symbolTable, debug_symbols);
-    } else {
-#endif /* ISPC_NVPTX_ENABLED */
-        lDefineConstantInt("programCount", g->target->getVectorWidth(), module, symbolTable, debug_symbols);
-#ifdef ISPC_NVPTX_ENABLED
-    }
-#endif /* ISPC_NVPTX_ENABLED */
+    lDefineConstantInt("programCount", g->target->getVectorWidth(), module, symbolTable, debug_symbols);
 
     // define the 'programIndex' builtin
     lDefineProgramIndex(module, symbolTable, debug_symbols);
@@ -1836,24 +967,14 @@ void DefineStdlib(SymbolTable *symbolTable, llvm::LLVMContext *ctx, llvm::Module
     lDefineConstantInt("__have_native_rsqrtd", g->target->hasRsqrtd(), module, symbolTable, debug_symbols);
     lDefineConstantInt("__have_native_rcpd", g->target->hasRcpd(), module, symbolTable, debug_symbols);
 
-#ifdef ISPC_NVPTX_ENABLED
-    lDefineConstantInt("__is_nvptx_target", (int)(g->target->getISA() == Target::NVPTX), module, symbolTable,
-                       debug_symbols);
-#else
-    lDefineConstantInt("__is_nvptx_target", (int)0, module, symbolTable, debug_symbols);
-#endif /* ISPC_NVPTX_ENABLED */
-
     if (g->forceAlignment != -1) {
         llvm::GlobalVariable *alignment = module->getGlobalVariable("memory_alignment", true);
         alignment->setInitializer(LLVMInt32(g->forceAlignment));
     }
 
-    // LLVM 3.6 is only because it was not tested with earlier versions.
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_6 // LLVM 3.6+
     if (g->generateDebuggingSymbols) {
         emitLLVMUsed(*module, debug_symbols);
     }
-#endif
 
     if (includeStdlibISPC) {
         // If the user wants the standard library to be included, parse the

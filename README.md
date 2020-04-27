@@ -1,8 +1,8 @@
 [![TravisCI build status (Linux)](https://travis-ci.com/ispc/ispc.svg?branch=master)](https://travis-ci.com/ispc/ispc)
 [![Appveyor build status (Windows)](https://ci.appveyor.com/api/projects/status/xfllw9vkp3lj4l0v/branch/master?svg=true)](https://ci.appveyor.com/project/ispc/ispc/branch/master)
 
-Intel(r) SPMD Program Compiler
-==============================
+Intel® Implicit SPMD Program Compiler (Intel® ISPC)
+===================================================
 
 ``ispc`` is a compiler for a variant of the C programming language, with
 extensions for
@@ -75,7 +75,7 @@ Features
     generations: ``ispc`` has targets for SSE2, SSE4, AVX, AVX2, and AVX512.
 
   * Portability across operating systems: Microsoft
-    Windows, macOS, and Linux are all supported
+    Windows, macOS, Linux, and FreeBSD are all supported
     by ``ispc``.
 
   * Debugging with standard tools: ``ispc``
@@ -87,7 +87,7 @@ Additional Resources
 Prebuilt ``ispc`` binaries for Windows, macOS and Linux can be downloaded
 from the [ispc downloads page](http://ispc.github.com/downloads.html).
 Latest ``ispc`` binaries corresponding to master branch can be downloaded
-from Appveyor for [Linux](https://ci.appveyor.com/api/projects/ispc/ispc/artifacts/build%2Fispc-trunk-linux.tar.gz?job=Environment%3A%20APPVEYOR_BUILD_WORKER_IMAGE%3DUbuntu1604%2C%20LLVM_VERSION%3Dlatest) and [Windows](https://ci.appveyor.com/api/projects/ispc/ispc/artifacts/build%2Fispc-trunk-windows.zip?job=Environment%3A%20APPVEYOR_BUILD_WORKER_IMAGE%3DVisual%20Studio%202017%2C%20LLVM_VERSION%3Dlatest)
+from Appveyor for [Linux](https://ci.appveyor.com/api/projects/ispc/ispc/artifacts/build%2Fispc-trunk-linux.tar.gz?job=Environment%3A%20APPVEYOR_BUILD_WORKER_IMAGE%3DUbuntu1604%2C%20LLVM_VERSION%3Dlatest) and [Windows](https://ci.appveyor.com/api/projects/ispc/ispc/artifacts/build%2Fispc-trunk-windows.zip?job=Environment%3A%20APPVEYOR_BUILD_WORKER_IMAGE%3DVisual%20Studio%202019%2C%20LLVM_VERSION%3Dlatest)
 See also additional
 [documentation](http://ispc.github.com/documentation.html) and additional
 [performance information](http://ispc.github.com/perf.html).

@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2019, Intel Corporation
+  Copyright (c) 2010-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -35,27 +35,16 @@
     @brief Header file with declarations for various LLVM utility stuff
 */
 
-#ifndef ISPC_LLVMUTIL_H
-#define ISPC_LLVMUTIL_H 1
+#pragma once
 
 #include "ispc_version.h"
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-#include <llvm/Constants.h>
-#include <llvm/DerivedTypes.h>
-#include <llvm/LLVMContext.h>
-#include <llvm/Type.h>
-#else // 3.3+
+
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Type.h>
-#endif
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-#define PTYPE(p) (llvm::cast<llvm::SequentialType>((p)->getType()->getScalarType())->getElementType())
-#else // LLVM 4.0+
 #define PTYPE(p) (llvm::cast<llvm::PointerType>((p)->getType()->getScalarType())->getElementType())
-#endif
 
 namespace llvm {
 class PHINode;
@@ -71,6 +60,7 @@ struct LLVMTypes {
     static llvm::PointerType *VoidPointerType;
     static llvm::Type *PointerIntType;
     static llvm::Type *BoolType;
+    static llvm::Type *BoolStorageType;
 
     static llvm::Type *Int8Type;
     static llvm::Type *Int16Type;
@@ -89,6 +79,7 @@ struct LLVMTypes {
     static llvm::VectorType *MaskType;
 
     static llvm::VectorType *BoolVectorType;
+    static llvm::VectorType *BoolVectorStorageType;
     static llvm::VectorType *Int1VectorType;
     static llvm::VectorType *Int8VectorType;
     static llvm::VectorType *Int16VectorType;
@@ -110,7 +101,7 @@ struct LLVMTypes {
 /** These variables hold the corresponding LLVM constant values as a
     convenience to code elsewhere in the system.
  */
-extern llvm::Constant *LLVMTrue, *LLVMFalse;
+extern llvm::Constant *LLVMTrue, *LLVMFalse, *LLVMTrueInStorage, *LLVMFalseInStorage;
 
 /** This should be called early in initialization to initialize the members
     of LLVMTypes and the LLVMTrue/LLVMFalse constants.  However, it can't
@@ -143,6 +134,10 @@ extern llvm::Constant *LLVMDouble(double f);
 /** Returns an LLVM boolean vector constant of the given value smeared
     across all elements */
 extern llvm::Constant *LLVMBoolVector(bool v);
+
+/** Returns an LLVM boolean vector constant of the given value smeared
+    across all elements with bool represented as storage type(i8)*/
+extern llvm::Constant *LLVMBoolVectorInStorage(bool v);
 
 /** Returns an LLVM i8 vector constant of the given value smeared
     across all elements */
@@ -191,6 +186,11 @@ extern llvm::Constant *LLVMUIntAsType(uint64_t, llvm::Type *t);
     The array should have g->target.vectorWidth elements. */
 extern llvm::Constant *LLVMBoolVector(const bool *v);
 
+/** Returns an LLVM boolean vector based on the given array of values
+    with bool represented as storage type(i8).
+    The array should have g->target.vectorWidth elements. */
+extern llvm::Constant *LLVMBoolVectorInStorage(const bool *v);
+
 /** Returns an LLVM i8 vector based on the given array of values.
     The array should have g->target.vectorWidth elements. */
 extern llvm::Constant *LLVMInt8Vector(const int8_t *i);
@@ -235,6 +235,9 @@ extern llvm::Constant *LLVMMaskAllOff;
     are equal.  Like lValuesAreEqual(), this is a conservative test and may
     return false for arrays where the values are actually all equal.  */
 extern bool LLVMVectorValuesAllEqual(llvm::Value *v, llvm::Value **splat = NULL);
+
+/** Tests to see if OR is actually an ADD.  */
+extern bool IsOrEquivalentToAdd(llvm::Value *op);
 
 /** Given vector of integer-typed values, this function returns true if it
     can determine that the elements of the vector have a step of 'stride'
@@ -324,5 +327,3 @@ extern llvm::Value *LLVMShuffleVectors(llvm::Value *v1, llvm::Value *v2, int32_t
 */
 extern const char *LLVMGetName(llvm::Value *v, const char *);
 extern const char *LLVMGetName(const char *op, llvm::Value *v1, llvm::Value *v2);
-
-#endif // ISPC_LLVMUTIL_H

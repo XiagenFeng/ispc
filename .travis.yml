@@ -1,4 +1,4 @@
-#  Copyright (c) 2018-2019, Intel Corporation
+#  Copyright (c) 2018-2020, Intel Corporation
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -54,13 +54,20 @@ env:
     - LLVM_HOME=/usr/local/src/llvm
     - ISPC_HOME=$TRAVIS_BUILD_DIR
   matrix:
+    - LLVM_VERSION=10.0 OS=Ubuntu16.04 DOCKER_TAG=llvm100
+    - LLVM_VERSION=9.0 OS=Ubuntu16.04 DOCKER_TAG=llvm90
     - LLVM_VERSION=8.0 OS=Ubuntu16.04 DOCKER_TAG=llvm80
     - LLVM_VERSION=7.0 OS=Ubuntu16.04 DOCKER_TAG=llvm70
-    - LLVM_VERSION=6.0 OS=Ubuntu16.04 DOCKER_TAG=llvm60
-    - LLVM_VERSION=5.0 OS=Ubuntu16.04 DOCKER_TAG=llvm50
+      # WASM enabled build
+    - LLVM_VERSION=10.0 OS=Ubuntu16.04 DOCKER_TAG=llvm100 WASM_FLAGS="-DWASM_ENABLED=ON"
 
 before_install:
+  - sudo apt-get update
   - sudo apt-get install -y libc6-dev-i386 g++-multilib lib32stdc++6
+  - if [ -n "$WASM_FLAGS" ]; then source scripts/install_emscripten.sh && emcc --version; fi
+  - wget https://cmake.org/files/v3.17/cmake-3.17.0-Linux-x86_64.sh && mkdir /opt/cmake && sh cmake-3.17.0-Linux-x86_64.sh --prefix=/opt/cmake --skip-license && sudo ln -s /opt/cmake/bin/cmake /usr/local/bin/cmake && rm cmake-3.17.0-Linux-x86_64.sh
+  - export PATH=/opt/cmake/bin:$PATH
+  - cmake --version
   - docker pull "$DOCKER_REPO_PATH:$DOCKER_TAG"
   - docker run "$DOCKER_REPO_PATH:$DOCKER_TAG"
   - export CONTAINER=`docker ps --all |head -2 |tail -1 |awk '//{print $1}'`
@@ -69,17 +76,20 @@ before_install:
 
 script:
   - mkdir build_$LLVM_VERSION && cd build_$LLVM_VERSION
-  - cmake -DCMAKE_INSTALL_PREFIX=$TRAVIS_BUILD_DIR ../
+  - cmake -DCMAKE_INSTALL_PREFIX=$TRAVIS_BUILD_DIR -DISPC_INCLUDE_BENCHMARKS=ON $WASM_FLAGS ../
     # Build ispc and check_isa utility. Run lit tests.
   - make ispc check_isa check-all -j4
+    # Build benchmarks and test them.
+  - make ispc_benchmarks && make test
     # Add ispc to the PATH
   - export PATH=$ISPC_HOME/build_$LLVM_VERSION/bin:$PATH && cd $ISPC_HOME
   - check_isa
+  - ispc --support-matrix
   - ./check_env.py
     # Run examples
-  - ./perf.py -n 1
+  - if [ -z "$WASM_FLAGS" ]; then ./perf.py -n 1; fi
     # Run tests for latest LLVM version
-  - if [ "$LLVM_VERSION" == "8.0" ]; then ./run_tests.py; ./run_tests.py -a x86; fi
+  - if [ "$LLVM_VERSION" == "10.0" -a -z "$WASM_FLAGS" ]; then ./run_tests.py; ./run_tests.py -a x86; fi
 
 stages:
   - check format

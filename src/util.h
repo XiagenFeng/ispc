@@ -36,8 +36,7 @@
     @brief
 */
 
-#ifndef ISPC_UTIL_H
-#define ISPC_UTIL_H
+#pragma once
 
 #include "ispc.h"
 #ifdef ISPC_HOST_IS_WINDOWS
@@ -59,7 +58,7 @@ inline uint32_t RoundUpPow2(uint32_t v) {
 }
 
 #ifdef __GNUG__
-#define PRINTF_FUNC __attribute__((__format__(__printf__, 2, 3)))
+#define PRINTF_FUNC __attribute__((format(printf, 2, 3)))
 #else
 #define PRINTF_FUNC
 #endif // __GNUG__
@@ -105,6 +104,11 @@ void Error(SourcePos p, const char *format, ...) PRINTF_FUNC;
 */
 void PerformanceWarning(SourcePos p, const char *format, ...) PRINTF_FUNC;
 
+/** Reports that unreachable location is reached. This is a kind of fatal error
+    that causes the program to terminate.
+ */
+#define UNREACHABLE() FatalError(__FILE__, __LINE__, "unreachable code")
+
 /** Reports a fatal error that causes the program to terminate.  This
     should only be used for cases where there is an internal error in the
     compiler.
@@ -115,7 +119,34 @@ void PerformanceWarning(SourcePos p, const char *format, ...) PRINTF_FUNC;
     used via the FATAL macro, which includes the file and line number where
     the error was issued.
  */
-void FatalError(const char *file, int line, const char *message);
+[[noreturn]] void FatalError(const char *file, int line, const char *message);
+
+/** Asserts that expr parameter is not equal to zero. Otherwise the program is
+    terminated with propper error message and with file and line number where
+    the assertion happend.
+ */
+#define Assert(expr) ((void)((expr) ? 0 : ((void)DoAssert(__FILE__, __LINE__, #expr), 0)))
+
+/** This function generally shouldn't be called directly, but should be
+    used via the Assert macro, which includes the file and line number where
+    the assertion happens.
+    Note: avoid adding [[noreturn]] as VS2017 treats Assert macros as never returning.
+ */
+void DoAssert(const char *file, int line, const char *expr);
+
+/** Asserts that expr parameter is not equal to zero. Otherwise the program is
+    terminated with propper error message and with file and line number where
+    the assertion happend and the information about source position in the user
+    program, which has triggered the problem.
+ */
+#define AssertPos(pos, expr) ((void)((expr) ? 0 : ((void)DoAssertPos(pos, __FILE__, __LINE__, #expr), 0)))
+
+/** This function generally shouldn't be called directly, but should be
+    used via the AssertPos macro, which includes the file and line number where
+    the assertion happens.
+    Note: avoid adding [[noreturn]] as VS2017 treats AssertPos macros as never returning.
+ */
+void DoAssertPos(SourcePos pos, const char *file, int line, const char *expr);
 
 /** Returns the number of single-character edits needed to transform
     between the two strings.
@@ -164,4 +195,6 @@ void PrintWithWordBreaks(const char *buf, int indent, int columnWidth, FILE *out
  */
 int TerminalWidth();
 
-#endif // ISPC_UTIL_H
+/** Returns true is the filepath represents stdin, otherwise false.
+ */
+bool IsStdin(const char *);

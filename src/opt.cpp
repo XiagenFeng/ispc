@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2019, Intel Corporation
+  Copyright (c) 2010-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -47,89 +47,56 @@
 #include <set>
 #include <stdio.h>
 
-#include <llvm/Pass.h>
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-#include <llvm/BasicBlock.h>
-#include <llvm/Constants.h>
-#include <llvm/Function.h>
-#include <llvm/Instructions.h>
-#include <llvm/Intrinsics.h>
-#include <llvm/Module.h>
-#ifdef ISPC_NVPTX_ENABLED
-#include <llvm/InlineAsm.h>
-#endif /* ISPC_NVPTX_ENABLED */
-#else  // LLVM 3.3+
+#include "llvm/InitializePasses.h"
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Module.h>
-#ifdef ISPC_NVPTX_ENABLED
-#include <llvm/IR/InlineAsm.h>
-#endif /* ISPC_NVPTX_ENABLED */
-#endif
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_4 // LLVM 3.4+
+#include <llvm/Pass.h>
+
 #include <llvm/Transforms/Instrumentation.h>
-#endif
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-#include "llvm/PassManager.h"
-#else // LLVM 3.7+
+
 #include "llvm/IR/LegacyPassManager.h"
-#endif
+
 #include <llvm/PassRegistry.h>
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_5 // LLVM 3.5+
+
 #include <llvm/IR/DebugInfo.h>
 #include <llvm/IR/IRPrintingPasses.h>
 #include <llvm/IR/PatternMatch.h>
 #include <llvm/IR/Verifier.h>
-#else // < 3.5
-#include <llvm/Analysis/Verifier.h>
-#include <llvm/Assembly/PrintModulePass.h>
-#include <llvm/DebugInfo.h>
-#include <llvm/Support/PatternMatch.h>
-#endif
+
 #include <llvm/Analysis/ConstantFolding.h>
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-#include <llvm/Target/TargetLibraryInfo.h>
-#else // LLVM 3.7+
+
 #include <llvm/Analysis/TargetLibraryInfo.h>
-#endif
-#include <llvm/ADT/SmallSet.h>
-#include <llvm/ADT/Triple.h>
-#include <llvm/Transforms/IPO.h>
-#include <llvm/Transforms/Scalar.h>
 #if ISPC_LLVM_VERSION >= ISPC_LLVM_7_0
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Utils.h"
 #endif
+#include <llvm/ADT/SmallSet.h>
+#include <llvm/ADT/Triple.h>
 #include <llvm/Target/TargetOptions.h>
+#include <llvm/Transforms/IPO.h>
+#include <llvm/Transforms/Scalar.h>
 #include <llvm/Transforms/Utils/BasicBlockUtils.h>
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-#include <llvm/DataLayout.h>
-#else // LLVM 3.3+
+
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/DataLayout.h>
-#endif
-#include <llvm/Target/TargetMachine.h>
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_8 // LLVM 3.8+
+
 #include "llvm/Analysis/TypeBasedAliasAnalysis.h"
-#include <llvm/Analysis/BasicAliasAnalysis.h>
-#endif
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_9 // LLVM 3.9+
 #include "llvm/Transforms/IPO/FunctionAttrs.h"
 #include "llvm/Transforms/Scalar/GVN.h"
-#endif
+#include <llvm/Analysis/BasicAliasAnalysis.h>
 #include <llvm/Analysis/Passes.h>
-#include <llvm/Support/raw_ostream.h>
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_5_0 // LLVM 5.0+
 #include <llvm/BinaryFormat/Dwarf.h>
-#else // LLVM up to 4.x
-#include <llvm/Support/Dwarf.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Target/TargetMachine.h>
+#if ISPC_LLVM_VERSION >= ISPC_LLVM_10_0
+#include "llvm/IR/IntrinsicsX86.h"
 #endif
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_6
+
 #include <llvm/IR/IntrinsicInst.h>
-#endif
 #ifdef ISPC_HOST_IS_LINUX
 #include <alloca.h>
 #elif defined(ISPC_HOST_IS_WINDOWS)
@@ -169,9 +136,6 @@ static llvm::Pass *CreateDebugPassFile(int number, llvm::StringRef name);
 static llvm::Pass *CreateReplaceStdlibShiftPass();
 
 static llvm::Pass *CreateFixBooleanSelectPass();
-#ifdef ISPC_NVPTX_ENABLED
-static llvm::Pass *CreatePromoteLocalToPrivatePass();
-#endif /* ISPC_NVPTX_ENABLED */
 
 #ifndef ISPC_NO_DUMPS
 #define DEBUG_START_PASS(NAME)                                                                                         \
@@ -258,35 +222,21 @@ static bool lGetSourcePosFromMetadata(const llvm::Instruction *inst, SourcePos *
     llvm::MDString *str = llvm::dyn_cast<llvm::MDString>(filename->getOperand(0));
     Assert(str);
     llvm::ConstantInt *first_lnum =
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_5
-        llvm::dyn_cast<llvm::ConstantInt>(first_line->getOperand(0));
-#else /* LLVN 3.6+ */
+
         llvm::mdconst::extract<llvm::ConstantInt>(first_line->getOperand(0));
-#endif
     Assert(first_lnum);
 
     llvm::ConstantInt *first_colnum =
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_5
-        llvm::dyn_cast<llvm::ConstantInt>(first_column->getOperand(0));
-#else /* LLVN 3.6+ */
+
         llvm::mdconst::extract<llvm::ConstantInt>(first_column->getOperand(0));
-#endif
     Assert(first_column);
 
     llvm::ConstantInt *last_lnum =
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_5
-        llvm::dyn_cast<llvm::ConstantInt>(last_line->getOperand(0));
-#else /* LLVN 3.6+ */
+
         llvm::mdconst::extract<llvm::ConstantInt>(last_line->getOperand(0));
-#endif
     Assert(last_lnum);
 
-    llvm::ConstantInt *last_colnum =
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_5
-        llvm::dyn_cast<llvm::ConstantInt>(last_column->getOperand(0));
-#else /* LLVN 3.6+ */
-        llvm::mdconst::extract<llvm::ConstantInt>(last_column->getOperand(0));
-#endif
+    llvm::ConstantInt *last_colnum = llvm::mdconst::extract<llvm::ConstantInt>(last_column->getOperand(0));
     Assert(last_column);
 
     *pos = SourcePos(str->getString().data(), (int)first_lnum->getZExtValue(), (int)first_colnum->getZExtValue(),
@@ -335,11 +285,8 @@ static llvm::Instruction *lGEPInst(llvm::Value *ptr, llvm::Value *offset, const 
                                    llvm::Instruction *insertBefore) {
     llvm::Value *index[1] = {offset};
     llvm::ArrayRef<llvm::Value *> arrayRef(&index[0], &index[1]);
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    return llvm::GetElementPtrInst::Create(ptr, arrayRef, name, insertBefore);
-#else // LLVM 3.7+
+
     return llvm::GetElementPtrInst::Create(PTYPE(ptr), ptr, arrayRef, name, insertBefore);
-#endif
 }
 
 /** Given a vector of constant values (int, float, or bool) representing an
@@ -457,17 +404,10 @@ class DebugPassManager {
     DebugPassManager() : number(0) {}
     void add(llvm::Pass *P, int stage);
     bool run(llvm::Module &M) { return PM.run(M); }
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::PassManager &getPM() { return PM; }
-#else /* LLVM 3.7+ */
     llvm::legacy::PassManager &getPM() { return PM; }
-#endif
+
   private:
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::PassManager PM;
-#else /* LLVM 3.7+ */
     llvm::legacy::PassManager PM;
-#endif
     int number;
 };
 
@@ -488,23 +428,10 @@ void DebugPassManager::add(llvm::Pass *P, int stage = -1) {
                 PM.add(CreateDebugPassFile(number, P->getPassName()));
             } else {
                 char buf[100];
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-                snprintf(buf, sizeof(buf), "\n\n*****LLVM IR after phase %d: %s*****\n\n", number, P->getPassName());
-#else // LLVM 4.0+
                 snprintf(buf, sizeof(buf), "\n\n*****LLVM IR after phase %d: %s*****\n\n", number,
                          P->getPassName().data());
-#endif
                 PM.add(CreateDebugPass(buf));
             }
-        }
-#endif
-
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_4 || ISPC_LLVM_VERSION == ISPC_LLVM_3_5 // only 3.4 and 3.5
-        if (g->debugIR == number) {
-            // adding generating of LLVM IR debug after optimization
-            char buf[100];
-            snprintf(buf, sizeof(buf), "Debug_IR_after_%d_phase.bc", number);
-            PM.add(llvm::createDebugIRPass(true, true, ".", buf));
         }
 #endif
     }
@@ -521,33 +448,11 @@ void Optimize(llvm::Module *module, int optLevel) {
     DebugPassManager optPM;
     optPM.add(llvm::createVerifierPass(), 0);
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::TargetLibraryInfo *targetLibraryInfo = new llvm::TargetLibraryInfo(llvm::Triple(module->getTargetTriple()));
-    optPM.add(targetLibraryInfo);
-#else // LLVM 3.7+
     optPM.add(new llvm::TargetLibraryInfoWrapperPass(llvm::Triple(module->getTargetTriple())));
-#endif
-
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_4
-    optPM.add(new llvm::DataLayout(*g->target->getDataLayout()));
-#elif ISPC_LLVM_VERSION == ISPC_LLVM_3_5
-    optPM.add(new llvm::DataLayoutPass(*g->target->getDataLayout()));
-#elif ISPC_LLVM_VERSION == ISPC_LLVM_3_6
-    llvm::DataLayoutPass *dlp = new llvm::DataLayoutPass();
-    dlp->doInitialization(*module);
-    optPM.add(dlp);
-#endif // LLVM 3.7+ doesn't have DataLayoutPass anymore.
 
     llvm::TargetMachine *targetMachine = g->target->GetTargetMachine();
 
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-    optPM.add(new llvm::TargetTransformInfo(targetMachine->getScalarTargetTransformInfo(),
-                                            targetMachine->getVectorTargetTransformInfo()));
-#elif ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    targetMachine->addAnalysisPasses(optPM.getPM());
-#else // LLVM 3.7+
     optPM.getPM().add(createTargetTransformInfoWrapperPass(targetMachine->getTargetIRAnalysis()));
-#endif
 
     optPM.add(llvm::createIndVarSimplifyPass());
 
@@ -558,10 +463,6 @@ void Optimize(llvm::Module *module, int optLevel) {
         // take the various __pseudo_* functions it has emitted and turn
         // them into something that can actually execute.
         optPM.add(CreateImproveMemoryOpsPass(), 100);
-#ifdef ISPC_NVPTX_ENABLED
-        if (g->opt.disableGatherScatterOptimizations == false && g->target->getVectorWidth() > 1)
-#endif /* ISPC_NVPTX_ENABLED */
-            optPM.add(CreateImproveMemoryOpsPass(), 100);
 
         if (g->opt.disableHandlePseudoMemoryOps == false)
             optPM.add(CreateReplacePseudoMemoryOpsPass());
@@ -578,9 +479,6 @@ void Optimize(llvm::Module *module, int optLevel) {
         llvm::initializeScalarOpts(*registry);
         llvm::initializeIPO(*registry);
         llvm::initializeAnalysis(*registry);
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_7
-        llvm::initializeIPA(*registry);
-#endif
         llvm::initializeTransformUtils(*registry);
         llvm::initializeInstCombine(*registry);
         llvm::initializeInstrumentation(*registry);
@@ -597,19 +495,12 @@ void Optimize(llvm::Module *module, int optLevel) {
         // so we explicitly enable them here.
         // Need to keep sync with future LLVM change
         // An alternative is to call populateFunctionPassManager()
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_7
-        optPM.add(llvm::createTypeBasedAliasAnalysisPass(), 190);
-        optPM.add(llvm::createBasicAliasAnalysisPass());
-#else
         optPM.add(llvm::createTypeBasedAAWrapperPass(), 190);
         optPM.add(llvm::createBasicAAWrapperPass());
-#endif
         optPM.add(llvm::createCFGSimplificationPass());
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-        optPM.add(llvm::createScalarReplAggregatesPass());
-#else
+
         optPM.add(llvm::createSROAPass());
-#endif
+
         optPM.add(llvm::createEarlyCSEPass());
         optPM.add(llvm::createLowerExpectIntrinsicPass());
 
@@ -633,20 +524,8 @@ void Optimize(llvm::Module *module, int optLevel) {
         }
         optPM.add(llvm::createDeadInstEliminationPass(), 220);
 
-        // Max struct size threshold for scalar replacement is
-        //    1) 4 fields (r,g,b,w)
-        //    2) field size: vectorWidth * sizeof(float)
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-        const int field_limit = 4;
-        int sr_threshold = g->target->getVectorWidth() * sizeof(float) * field_limit;
-#endif
-
         // On to more serious optimizations
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-        optPM.add(llvm::createScalarReplAggregatesPass(sr_threshold));
-#else
         optPM.add(llvm::createSROAPass());
-#endif
         optPM.add(llvm::createInstructionCombiningPass());
         optPM.add(llvm::createCFGSimplificationPass());
         optPM.add(llvm::createPromoteMemoryToRegisterPass());
@@ -654,44 +533,29 @@ void Optimize(llvm::Module *module, int optLevel) {
         optPM.add(llvm::createReassociatePass());
         optPM.add(llvm::createIPConstantPropagationPass());
 
-#ifdef ISPC_NVPTX_ENABLED
-        if (g->target->getISA() != Target::NVPTX)
-#endif /* ISPC_NVPTX_ENABLED */
-            optPM.add(CreateReplaceStdlibShiftPass(), 229);
+        optPM.add(CreateReplaceStdlibShiftPass(), 229);
 
         optPM.add(llvm::createDeadArgEliminationPass(), 230);
         optPM.add(llvm::createInstructionCombiningPass());
         optPM.add(llvm::createCFGSimplificationPass());
         optPM.add(llvm::createPruneEHPass());
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_9 // 3.9+
         optPM.add(llvm::createPostOrderFunctionAttrsLegacyPass());
         optPM.add(llvm::createReversePostOrderFunctionAttrsPass());
-#elif ISPC_LLVM_VERSION == ISPC_LLVM_3_8 // 3.8
-        optPM.add(llvm::createPostOrderFunctionAttrsPass());
-        optPM.add(llvm::createReversePostOrderFunctionAttrsPass());
-#else                                    // 3.7 and earlier
-        optPM.add(llvm::createFunctionAttrsPass());
-#endif
+
         optPM.add(llvm::createFunctionInliningPass());
         optPM.add(llvm::createConstantPropagationPass());
         optPM.add(llvm::createDeadInstEliminationPass());
         optPM.add(llvm::createCFGSimplificationPass());
 
         optPM.add(llvm::createArgumentPromotionPass());
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_3
-        // Starting from 3.4 this functionality was moved to
-        // InstructionCombiningPass. See r184459 for details.
-        optPM.add(llvm::createSimplifyLibCallsPass(), 240);
-#endif
+
         optPM.add(llvm::createAggressiveDCEPass());
         optPM.add(llvm::createInstructionCombiningPass(), 241);
         optPM.add(llvm::createJumpThreadingPass());
         optPM.add(llvm::createCFGSimplificationPass());
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-        optPM.add(llvm::createScalarReplAggregatesPass(sr_threshold));
-#else
+
         optPM.add(llvm::createSROAPass());
-#endif
+
         optPM.add(llvm::createInstructionCombiningPass());
         optPM.add(llvm::createTailCallEliminationPass());
 
@@ -736,11 +600,9 @@ void Optimize(llvm::Module *module, int optLevel) {
 
         optPM.add(llvm::createFunctionInliningPass());
         optPM.add(llvm::createArgumentPromotionPass());
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-        optPM.add(llvm::createScalarReplAggregatesPass(sr_threshold, false));
-#else
+
         optPM.add(llvm::createSROAPass());
-#endif
+
         optPM.add(llvm::createInstructionCombiningPass());
         optPM.add(CreateInstructionSimplifyPass());
         optPM.add(llvm::createCFGSimplificationPass());
@@ -783,115 +645,6 @@ void Optimize(llvm::Module *module, int optLevel) {
 
         // Should be the last
         optPM.add(CreateFixBooleanSelectPass(), 400);
-#ifdef ISPC_NVPTX_ENABLED
-        if (g->target->getISA() == Target::NVPTX) {
-            optPM.add(CreatePromoteLocalToPrivatePass());
-            optPM.add(llvm::createGlobalDCEPass());
-
-            optPM.add(llvm::createTypeBasedAliasAnalysisPass());
-            optPM.add(llvm::createBasicAliasAnalysisPass());
-            optPM.add(llvm::createCFGSimplificationPass());
-            // Here clang has an experimental pass SROAPass instead of
-            // ScalarReplAggregatesPass. We should add it in the future.
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-            optPM.add(llvm::createScalarReplAggregatesPass());
-#else
-            optPM.add(llvm::createSROAPass());
-#endif
-            optPM.add(llvm::createEarlyCSEPass());
-            optPM.add(llvm::createLowerExpectIntrinsicPass());
-            optPM.add(llvm::createTypeBasedAliasAnalysisPass());
-            optPM.add(llvm::createBasicAliasAnalysisPass());
-
-            // Early optimizations to try to reduce the total amount of code to
-            // work with if we can
-            optPM.add(llvm::createReassociatePass());
-            optPM.add(llvm::createConstantPropagationPass());
-            optPM.add(llvm::createDeadInstEliminationPass());
-            optPM.add(llvm::createCFGSimplificationPass());
-
-            optPM.add(llvm::createPromoteMemoryToRegisterPass());
-            optPM.add(llvm::createAggressiveDCEPass());
-
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createDeadInstEliminationPass());
-
-            // On to more serious optimizations
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createCFGSimplificationPass());
-            optPM.add(llvm::createPromoteMemoryToRegisterPass());
-            optPM.add(llvm::createGlobalOptimizerPass());
-            optPM.add(llvm::createReassociatePass());
-            optPM.add(llvm::createIPConstantPropagationPass());
-
-            optPM.add(llvm::createDeadArgEliminationPass());
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createCFGSimplificationPass());
-            optPM.add(llvm::createPruneEHPass());
-            optPM.add(llvm::createFunctionAttrsPass());
-            optPM.add(llvm::createFunctionInliningPass());
-            optPM.add(llvm::createConstantPropagationPass());
-            optPM.add(llvm::createDeadInstEliminationPass());
-            optPM.add(llvm::createCFGSimplificationPass());
-
-            optPM.add(llvm::createArgumentPromotionPass());
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_3
-            // Starting from 3.4 this functionality was moved to
-            // InstructionCombiningPass. See r184459 for details.
-            optPM.add(llvm::createSimplifyLibCallsPass());
-#endif
-            optPM.add(llvm::createAggressiveDCEPass());
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createJumpThreadingPass());
-            optPM.add(llvm::createCFGSimplificationPass());
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createTailCallEliminationPass());
-
-            optPM.add(llvm::createInstructionCombiningPass());
-
-            optPM.add(llvm::createFunctionInliningPass());
-            optPM.add(llvm::createConstantPropagationPass());
-
-            optPM.add(llvm::createInstructionCombiningPass());
-
-            optPM.add(llvm::createIPSCCPPass());
-            optPM.add(llvm::createDeadArgEliminationPass());
-            optPM.add(llvm::createAggressiveDCEPass());
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createCFGSimplificationPass());
-
-            optPM.add(llvm::createFunctionInliningPass());
-            optPM.add(llvm::createArgumentPromotionPass());
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createCFGSimplificationPass());
-            optPM.add(llvm::createReassociatePass());
-            optPM.add(llvm::createLoopRotatePass());
-            optPM.add(llvm::createLICMPass());
-//          optPM.add(llvm::createLoopUnswitchPass(false));
-#if 1
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createIndVarSimplifyPass());
-            optPM.add(llvm::createLoopIdiomPass());
-            optPM.add(llvm::createLoopDeletionPass());
-            optPM.add(llvm::createLoopUnrollPass());
-            optPM.add(llvm::createGVNPass());
-            optPM.add(llvm::createMemCpyOptPass());
-            optPM.add(llvm::createSCCPPass());
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createJumpThreadingPass());
-            optPM.add(llvm::createCorrelatedValuePropagationPass());
-            optPM.add(llvm::createDeadStoreEliminationPass());
-            optPM.add(llvm::createAggressiveDCEPass());
-            optPM.add(llvm::createCFGSimplificationPass());
-            optPM.add(llvm::createInstructionCombiningPass());
-            optPM.add(llvm::createFunctionInliningPass());
-            optPM.add(llvm::createAggressiveDCEPass());
-            optPM.add(llvm::createStripDeadPrototypesPass());
-            optPM.add(llvm::createGlobalDCEPass());
-            optPM.add(llvm::createConstantMergePass());
-#endif
-        }
-#endif /* ISPC_NVPTX_ENABLED */
     }
 
     // Finish up by making sure we didn't mess anything up in the IR along
@@ -920,16 +673,15 @@ void Optimize(llvm::Module *module, int optLevel) {
     @todo The better thing to do would be to submit a patch to LLVM to get
     these; they're presumably pretty simple patterns to match.
 */
-class IntrinsicsOpt : public llvm::BasicBlockPass {
+class IntrinsicsOpt : public llvm::FunctionPass {
   public:
-    IntrinsicsOpt() : BasicBlockPass(ID){};
+    IntrinsicsOpt() : FunctionPass(ID){};
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Intrinsics Cleanup Optimization"; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Intrinsics Cleanup Optimization"; }
-#endif
+
     bool runOnBasicBlock(llvm::BasicBlock &BB);
+
+    bool runOnFunction(llvm::Function &F);
 
     static char ID;
 
@@ -1121,7 +873,12 @@ restart:
                         align = callInst->getCalledFunction() == avxMaskedLoad32 ? 4 : 8;
                     name = LLVMGetName(callInst->getArgOperand(0), "_load");
                     llvm::Instruction *loadInst =
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
                         new llvm::LoadInst(castPtr, name, false /* not volatile */, align, (llvm::Instruction *)NULL);
+#else // LLVM 10.0+
+                        new llvm::LoadInst(castPtr, name, false /* not volatile */, llvm::MaybeAlign(align),
+                                           (llvm::Instruction *)NULL);
+#endif
                     lCopyMetadata(loadInst, callInst);
                     llvm::ReplaceInstWithInst(callInst, loadInst);
                     modifiedAny = true;
@@ -1154,7 +911,11 @@ restart:
                         align = g->target->getNativeVectorAlignment();
                     else
                         align = callInst->getCalledFunction() == avxMaskedStore32 ? 4 : 8;
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
                     storeInst->setAlignment(align);
+#else // LLVM 10.0+
+                    storeInst->setAlignment(llvm::MaybeAlign(align));
+#endif
                     lCopyMetadata(storeInst, callInst);
                     llvm::ReplaceInstWithInst(callInst, storeInst);
 
@@ -1167,6 +928,15 @@ restart:
 
     DEBUG_END_PASS("IntrinsicsOpt");
 
+    return modifiedAny;
+}
+
+bool IntrinsicsOpt::runOnFunction(llvm::Function &F) {
+
+    bool modifiedAny = false;
+    for (llvm::BasicBlock &BB : F) {
+        modifiedAny |= runOnBasicBlock(BB);
+    }
     return modifiedAny;
 }
 
@@ -1199,16 +969,13 @@ static llvm::Pass *CreateIntrinsicsOptPass() { return new IntrinsicsOpt; }
     @todo The better thing to do would be to submit a patch to LLVM to get
     these; they're presumably pretty simple patterns to match.
 */
-class InstructionSimplifyPass : public llvm::BasicBlockPass {
+class InstructionSimplifyPass : public llvm::FunctionPass {
   public:
-    InstructionSimplifyPass() : BasicBlockPass(ID) {}
+    InstructionSimplifyPass() : FunctionPass(ID) {}
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Vector Select Optimization"; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Vector Select Optimization"; }
-#endif
     bool runOnBasicBlock(llvm::BasicBlock &BB);
+    bool runOnFunction(llvm::Function &F);
 
     static char ID;
 
@@ -1261,7 +1028,8 @@ llvm::Value *InstructionSimplifyPass::simplifyBoolVec(llvm::Value *value) {
 bool InstructionSimplifyPass::simplifySelect(llvm::SelectInst *selectInst, llvm::BasicBlock::iterator iter) {
     if (selectInst->getType()->isVectorTy() == false)
         return false;
-
+    Assert(selectInst->getOperand(1) != NULL);
+    Assert(selectInst->getOperand(2) != NULL);
     llvm::Value *factor = selectInst->getOperand(0);
 
     // Simplify all-on or all-off mask values
@@ -1333,6 +1101,15 @@ restart:
     return modifiedAny;
 }
 
+bool InstructionSimplifyPass::runOnFunction(llvm::Function &F) {
+
+    bool modifiedAny = false;
+    for (llvm::BasicBlock &BB : F) {
+        modifiedAny |= runOnBasicBlock(BB);
+    }
+    return modifiedAny;
+}
+
 static llvm::Pass *CreateInstructionSimplifyPass() { return new InstructionSimplifyPass; }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1348,17 +1125,16 @@ static llvm::Pass *CreateInstructionSimplifyPass() { return new InstructionSimpl
     See for example the comments discussing the __pseudo_gather functions
     in builtins.cpp for more information about this.
  */
-class ImproveMemoryOpsPass : public llvm::BasicBlockPass {
+class ImproveMemoryOpsPass : public llvm::FunctionPass {
   public:
     static char ID;
-    ImproveMemoryOpsPass() : BasicBlockPass(ID) {}
+    ImproveMemoryOpsPass() : FunctionPass(ID) {}
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Improve Memory Ops"; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Improve Memory Ops"; }
-#endif
+
     bool runOnBasicBlock(llvm::BasicBlock &BB);
+
+    bool runOnFunction(llvm::Function &F);
 };
 
 char ImproveMemoryOpsPass::ID = 0;
@@ -1380,7 +1156,6 @@ static llvm::Value *lCheckForActualPointer(llvm::Value *v) {
     } else if (llvm::isa<llvm::PtrToIntInst>(v)) {
         return v;
     }
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_7
     // This one is tricky, as it's heuristic tuned for LLVM 3.7+, which may
     // optimize loading double* with consequent ptr2int to straight load of i64.
     // This heuristic should be good enough to catch all the cases we should
@@ -1388,7 +1163,7 @@ static llvm::Value *lCheckForActualPointer(llvm::Value *v) {
     else if (llvm::isa<llvm::LoadInst>(v)) {
         return v;
     }
-#endif
+
     else if (llvm::CastInst *ci = llvm::dyn_cast<llvm::CastInst>(v)) {
         llvm::Value *t = lCheckForActualPointer(ci->getOperand(0));
         if (t == NULL) {
@@ -1512,13 +1287,17 @@ static llvm::Value *lGetBasePtrAndOffsets(llvm::Value *ptrs, llvm::Value **offse
         if (broadcastDetected) {
             llvm::Value *op = shuffle->getOperand(0);
             llvm::BinaryOperator *bop_var = llvm::dyn_cast<llvm::BinaryOperator>(op);
-            if (bop_var != NULL && bop_var->getOpcode() == llvm::Instruction::Add) {
+            if (bop_var != NULL && ((bop_var->getOpcode() == llvm::Instruction::Add) || IsOrEquivalentToAdd(bop_var))) {
                 // We expect here ConstantVector as
                 // <i64 4, i64 undef, i64 undef, i64 undef, i64 undef, i64 undef, i64 undef, i64 undef>
                 llvm::ConstantVector *cv = llvm::dyn_cast<llvm::ConstantVector>(bop_var->getOperand(1));
                 if (cv != NULL) {
                     llvm::Value *zeroMask =
+#if ISPC_LLVM_VERSION < ISPC_LLVM_11_0
                         llvm::ConstantVector::getSplat(cv->getType()->getVectorNumElements(),
+#else // LLVM 11.0+
+                        llvm::ConstantVector::getSplat({cv->getType()->getVectorNumElements(), false},
+#endif
                                                        llvm::Constant::getNullValue(llvm::Type::getInt32Ty(*g->ctx)));
                     // Create offset
                     llvm::Value *shuffle_offset = new llvm::ShuffleVectorInst(cv, llvm::UndefValue::get(cv->getType()),
@@ -1532,7 +1311,7 @@ static llvm::Value *lGetBasePtrAndOffsets(llvm::Value *ptrs, llvm::Value **offse
     }
 
     llvm::BinaryOperator *bop = llvm::dyn_cast<llvm::BinaryOperator>(ptrs);
-    if (bop != NULL && bop->getOpcode() == llvm::Instruction::Add) {
+    if (bop != NULL && ((bop->getOpcode() == llvm::Instruction::Add) || IsOrEquivalentToAdd(bop))) {
         // If we have a common pointer plus something, then we're also
         // good.
         if ((base = lGetBasePtrAndOffsets(bop->getOperand(0), offsets, insertBefore)) != NULL) {
@@ -1572,7 +1351,7 @@ static llvm::Value *lGetBasePtrAndOffsets(llvm::Value *ptrs, llvm::Value **offse
                 // it as having an offset of zero
                 elementBase = ce;
                 delta[i] = g->target->is32Bit() ? LLVMInt32(0) : LLVMInt64(0);
-            } else if (ce->getOpcode() == llvm::Instruction::Add) {
+            } else if ((ce->getOpcode() == llvm::Instruction::Add) || IsOrEquivalentToAdd(ce)) {
                 // Try both orderings of the operands to see if we can get
                 // a pointer+offset out of them.
                 elementBase = lGetConstantAddExprBaseOffset(ce->getOperand(0), ce->getOperand(1), &delta[i]);
@@ -1661,7 +1440,7 @@ static void lExtractConstantOffset(llvm::Value *vec, llvm::Value **constOffset, 
         llvm::Value *op1 = bop->getOperand(1);
         llvm::Value *c0, *v0, *c1, *v1;
 
-        if (bop->getOpcode() == llvm::Instruction::Add) {
+        if ((bop->getOpcode() == llvm::Instruction::Add) || IsOrEquivalentToAdd(bop)) {
             lExtractConstantOffset(op0, &c0, &v0, insertBefore);
             lExtractConstantOffset(op1, &c1, &v1, insertBefore);
 
@@ -1836,7 +1615,7 @@ static llvm::Value *lExtractOffsetVector248Scale(llvm::Value **vec) {
         return LLVMInt32(1);
 
     llvm::Value *op0 = bop->getOperand(0), *op1 = bop->getOperand(1);
-    if (bop->getOpcode() == llvm::Instruction::Add) {
+    if ((bop->getOpcode() == llvm::Instruction::Add) || IsOrEquivalentToAdd(bop)) {
         if (llvm::isa<llvm::ConstantAggregateZero>(op0)) {
             *vec = op1;
             return lExtractOffsetVector248Scale(vec);
@@ -2043,7 +1822,7 @@ static bool lOffsets32BitSafe(llvm::Value **variableOffsetPtr, llvm::Value **con
 static bool lIs32BitSafeHelper(llvm::Value *v) {
     // handle Adds, SExts, Constant Vectors
     if (llvm::BinaryOperator *bop = llvm::dyn_cast<llvm::BinaryOperator>(v)) {
-        if (bop->getOpcode() == llvm::Instruction::Add) {
+        if ((bop->getOpcode() == llvm::Instruction::Add) || IsOrEquivalentToAdd(bop)) {
             return lIs32BitSafeHelper(bop->getOperand(0)) && lIs32BitSafeHelper(bop->getOperand(1));
         }
         return false;
@@ -2783,7 +2562,11 @@ static bool lGSToLoadStore(llvm::CallInst *callInst) {
             llvm::Value *insertVec =
                 llvm::InsertElementInst::Create(undef1Value, scalarValue, LLVMInt32(0), callInst->getName(), callInst);
             llvm::Value *zeroMask =
+#if ISPC_LLVM_VERSION < ISPC_LLVM_11_0
                 llvm::ConstantVector::getSplat(callInst->getType()->getVectorNumElements(),
+#else // LLVM 11.0+
+                llvm::ConstantVector::getSplat({callInst->getType()->getVectorNumElements(), false},
+#endif
                                                llvm::Constant::getNullValue(llvm::Type::getInt32Ty(*g->ctx)));
             llvm::Value *shufValue = new llvm::ShuffleVectorInst(insertVec, undef2Value, zeroMask, callInst->getName());
 
@@ -2901,7 +2684,12 @@ static bool lImproveMaskedStore(llvm::CallInst *callInst) {
         lCopyMetadata(lvalue, callInst);
         llvm::Instruction *store =
             new llvm::StoreInst(rvalue, lvalue, false /* not volatile */,
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
                                 g->opt.forceAlignedMemory ? g->target->getNativeVectorAlignment() : info->align);
+#else // LLVM 10.0+
+                                llvm::MaybeAlign(g->opt.forceAlignedMemory ? g->target->getNativeVectorAlignment()
+                                                                           : info->align));
+#endif
         lCopyMetadata(store, callInst);
         llvm::ReplaceInstWithInst(callInst, store);
         return true;
@@ -2952,7 +2740,12 @@ static bool lImproveMaskedLoad(llvm::CallInst *callInst, llvm::BasicBlock::itera
         ptr = new llvm::BitCastInst(ptr, ptrType, "ptr_cast_for_load", callInst);
         llvm::Instruction *load = new llvm::LoadInst(
             ptr, callInst->getName(), false /* not volatile */,
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
             g->opt.forceAlignedMemory ? g->target->getNativeVectorAlignment() : info->align, (llvm::Instruction *)NULL);
+#else // LLVM 10.0+
+            llvm::MaybeAlign(g->opt.forceAlignedMemory ? g->target->getNativeVectorAlignment() : info->align),
+            (llvm::Instruction *)NULL);
+#endif
         lCopyMetadata(load, callInst);
         llvm::ReplaceInstWithInst(callInst, load);
         return true;
@@ -3001,6 +2794,15 @@ restart:
     return modifiedAny;
 }
 
+bool ImproveMemoryOpsPass::runOnFunction(llvm::Function &F) {
+
+    bool modifiedAny = false;
+    for (llvm::BasicBlock &BB : F) {
+        modifiedAny |= runOnBasicBlock(BB);
+    }
+    return modifiedAny;
+}
+
 static llvm::Pass *CreateImproveMemoryOpsPass() { return new ImproveMemoryOpsPass; }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -3025,17 +2827,14 @@ static llvm::Pass *CreateImproveMemoryOpsPass() { return new ImproveMemoryOpsPas
 //  in this case, we're often able to generate wide vector loads and
 //  appropriate shuffles automatically.
 
-class GatherCoalescePass : public llvm::BasicBlockPass {
+class GatherCoalescePass : public llvm::FunctionPass {
   public:
     static char ID;
-    GatherCoalescePass() : BasicBlockPass(ID) {}
+    GatherCoalescePass() : FunctionPass(ID) {}
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Gather Coalescing"; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Gather Coalescing"; }
-#endif
     bool runOnBasicBlock(llvm::BasicBlock &BB);
+    bool runOnFunction(llvm::Function &F);
 };
 
 char GatherCoalescePass::ID = 0;
@@ -3289,7 +3088,11 @@ llvm::Value *lGEPAndLoad(llvm::Value *basePtr, int64_t offset, int align, llvm::
                          llvm::Type *type) {
     llvm::Value *ptr = lGEPInst(basePtr, LLVMInt64(offset), "new_base", insertBefore);
     ptr = new llvm::BitCastInst(ptr, llvm::PointerType::get(type, 0), "ptr_cast", insertBefore);
+#if ISPC_LLVM_VERSION <= ISPC_LLVM_9_0
     return new llvm::LoadInst(ptr, "gather_load", false /* not volatile */, align, insertBefore);
+#else // LLVM 10.0+
+    return new llvm::LoadInst(ptr, "gather_load", false /* not volatile */, llvm::MaybeAlign(align), insertBefore);
+#endif
 }
 
 /* Having decided that we're doing to emit a series of loads, as encoded in
@@ -3707,6 +3510,7 @@ static llvm::Value *lComputeBasePtr(llvm::CallInst *gatherInst, llvm::Instructio
     // checking for this in GatherCoalescePass::runOnBasicBlock().  Thus,
     // extract the first value and use that as a scalar.
     llvm::Value *variable = LLVMExtractFirstVectorElement(variableOffsets);
+    Assert(variable != NULL);
     if (variable->getType() == LLVMTypes::Int64Type)
         offsetScale = new llvm::ZExtInst(offsetScale, LLVMTypes::Int64Type, "scale_to64", insertBefore);
     llvm::Value *offset =
@@ -3989,6 +3793,15 @@ restart:
     return modifiedAny;
 }
 
+bool GatherCoalescePass::runOnFunction(llvm::Function &F) {
+
+    bool modifiedAny = false;
+    for (llvm::BasicBlock &BB : F) {
+        modifiedAny |= runOnBasicBlock(BB);
+    }
+    return modifiedAny;
+}
+
 static llvm::Pass *CreateGatherCoalescePass() { return new GatherCoalescePass; }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -3998,17 +3811,14 @@ static llvm::Pass *CreateGatherCoalescePass() { return new GatherCoalescePass; }
     runs, we need to turn them into actual native gathers and scatters.
     This task is handled by the ReplacePseudoMemoryOpsPass here.
  */
-class ReplacePseudoMemoryOpsPass : public llvm::BasicBlockPass {
+class ReplacePseudoMemoryOpsPass : public llvm::FunctionPass {
   public:
     static char ID;
-    ReplacePseudoMemoryOpsPass() : BasicBlockPass(ID) {}
+    ReplacePseudoMemoryOpsPass() : FunctionPass(ID) {}
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Replace Pseudo Memory Ops"; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Replace Pseudo Memory Ops"; }
-#endif
     bool runOnBasicBlock(llvm::BasicBlock &BB);
+    bool runOnFunction(llvm::Function &F);
 };
 
 char ReplacePseudoMemoryOpsPass::ID = 0;
@@ -4029,7 +3839,7 @@ static bool lIsSafeToBlend(llvm::Value *lvalue) {
         if (ai) {
             llvm::Type *type = ai->getType();
             llvm::PointerType *pt = llvm::dyn_cast<llvm::PointerType>(type);
-            assert(pt != NULL);
+            Assert(pt != NULL);
             type = pt->getElementType();
             llvm::ArrayType *at;
             while ((at = llvm::dyn_cast<llvm::ArrayType>(type))) {
@@ -4278,6 +4088,15 @@ restart:
     return modifiedAny;
 }
 
+bool ReplacePseudoMemoryOpsPass::runOnFunction(llvm::Function &F) {
+
+    bool modifiedAny = false;
+    for (llvm::BasicBlock &BB : F) {
+        modifiedAny |= runOnBasicBlock(BB);
+    }
+    return modifiedAny;
+}
+
 static llvm::Pass *CreateReplacePseudoMemoryOpsPass() { return new ReplacePseudoMemoryOpsPass; }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -4296,17 +4115,14 @@ static llvm::Pass *CreateReplacePseudoMemoryOpsPass() { return new ReplacePseudo
     See stdlib.m4 for a number of uses of this idiom.
  */
 
-class IsCompileTimeConstantPass : public llvm::BasicBlockPass {
+class IsCompileTimeConstantPass : public llvm::FunctionPass {
   public:
     static char ID;
-    IsCompileTimeConstantPass(bool last = false) : BasicBlockPass(ID) { isLastTry = last; }
+    IsCompileTimeConstantPass(bool last = false) : FunctionPass(ID) { isLastTry = last; }
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Resolve \"is compile time constant\""; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Resolve \"is compile time constant\""; }
-#endif
     bool runOnBasicBlock(llvm::BasicBlock &BB);
+    bool runOnFunction(llvm::Function &F);
 
     bool isLastTry;
 };
@@ -4375,6 +4191,15 @@ restart:
     return modifiedAny;
 }
 
+bool IsCompileTimeConstantPass::runOnFunction(llvm::Function &F) {
+
+    bool modifiedAny = false;
+    for (llvm::BasicBlock &BB : F) {
+        modifiedAny |= runOnBasicBlock(BB);
+    }
+    return modifiedAny;
+}
+
 static llvm::Pass *CreateIsCompileTimeConstantPass(bool isLastTry) { return new IsCompileTimeConstantPass(isLastTry); }
 
 //////////////////////////////////////////////////////////////////////////
@@ -4390,11 +4215,7 @@ class DebugPass : public llvm::ModulePass {
     static char ID;
     DebugPass(char *output) : ModulePass(ID) { snprintf(str_output, sizeof(str_output), "%s", output); }
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Dump LLVM IR"; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Dump LLVM IR"; }
-#endif
     bool runOnModule(llvm::Module &m);
 
   private:
@@ -4425,11 +4246,7 @@ class DebugPassFile : public llvm::ModulePass {
     static char ID;
     DebugPassFile(int number, llvm::StringRef name) : ModulePass(ID), pnum(number), pname(name) {}
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Dump LLVM IR"; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Dump LLVM IR"; }
-#endif
     bool runOnModule(llvm::Module &m);
     bool doInitialization(llvm::Module &m);
 
@@ -4454,7 +4271,7 @@ std::string sanitize(std::string in) {
 void DebugPassFile::run(llvm::Module &module, bool init) {
     std::error_code EC;
     char fname[100];
-    snprintf(fname, sizeof(fname), "%s_%d_%s.ll", init ? "init" : "ir", pnum, sanitize(pname).c_str());
+    snprintf(fname, sizeof(fname), "%s_%d_%s.ll", init ? "init" : "ir", pnum, sanitize(std::string(pname)).c_str());
     llvm::raw_fd_ostream OS(fname, EC, llvm::sys::fs::F_None);
     Assert(!EC && "IR dump file creation failed!");
     module.print(OS, 0);
@@ -4494,11 +4311,7 @@ class MakeInternalFuncsStaticPass : public llvm::ModulePass {
 
     void getAnalysisUsage(llvm::AnalysisUsage &AU) const { AU.setPreservesCFG(); }
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Make internal funcs \"static\""; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Make internal funcs \"static\""; }
-#endif
     bool runOnModule(llvm::Module &m);
 };
 
@@ -4654,25 +4467,20 @@ static llvm::Pass *CreateMakeInternalFuncsStaticPass() { return new MakeInternal
 ///////////////////////////////////////////////////////////////////////////
 // PeepholePass
 
-class PeepholePass : public llvm::BasicBlockPass {
+class PeepholePass : public llvm::FunctionPass {
   public:
     PeepholePass();
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Peephole Optimizations"; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Peephole Optimizations"; }
-#endif
     bool runOnBasicBlock(llvm::BasicBlock &BB);
+    bool runOnFunction(llvm::Function &F);
 
     static char ID;
 };
 
 char PeepholePass::ID = 0;
 
-PeepholePass::PeepholePass() : BasicBlockPass(ID) {}
-
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_3
+PeepholePass::PeepholePass() : FunctionPass(ID) {}
 
 using namespace llvm::PatternMatch;
 
@@ -4910,7 +4718,6 @@ static llvm::Instruction *lMatchAvgDownInt16(llvm::Value *inst) {
     }
     return NULL;
 }
-#endif // !LLVM_3_2
 
 bool PeepholePass::runOnBasicBlock(llvm::BasicBlock &bb) {
     DEBUG_START_PASS("PeepholePass");
@@ -4920,10 +4727,7 @@ restart:
     for (llvm::BasicBlock::iterator iter = bb.begin(), e = bb.end(); iter != e; ++iter) {
         llvm::Instruction *inst = &*iter;
 
-        llvm::Instruction *builtinCall = NULL;
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_3
-        if (!builtinCall)
-            builtinCall = lMatchAvgUpUInt8(inst);
+        llvm::Instruction *builtinCall = lMatchAvgUpUInt8(inst);
         if (!builtinCall)
             builtinCall = lMatchAvgUpUInt16(inst);
         if (!builtinCall)
@@ -4938,7 +4742,6 @@ restart:
             builtinCall = lMatchAvgDownInt8(inst);
         if (!builtinCall)
             builtinCall = lMatchAvgDownInt16(inst);
-#endif // !LLVM_3_2
         if (builtinCall != NULL) {
             llvm::ReplaceInstWithInst(inst, builtinCall);
             modifiedAny = true;
@@ -4948,6 +4751,15 @@ restart:
 
     DEBUG_END_PASS("PeepholePass");
 
+    return modifiedAny;
+}
+
+bool PeepholePass::runOnFunction(llvm::Function &F) {
+
+    bool modifiedAny = false;
+    for (llvm::BasicBlock &BB : F) {
+        modifiedAny |= runOnBasicBlock(BB);
+    }
     return modifiedAny;
 }
 
@@ -4965,17 +4777,16 @@ static int64_t lGetIntValue(llvm::Value *offset) {
 ///////////////////////////////////////////////////////////////////////////
 // ReplaceStdlibShiftPass
 
-class ReplaceStdlibShiftPass : public llvm::BasicBlockPass {
+class ReplaceStdlibShiftPass : public llvm::FunctionPass {
   public:
     static char ID;
-    ReplaceStdlibShiftPass() : BasicBlockPass(ID) {}
+    ReplaceStdlibShiftPass() : FunctionPass(ID) {}
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Resolve \"replace extract insert chains\""; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Resolve \"replace extract insert chains\""; }
-#endif
+
     bool runOnBasicBlock(llvm::BasicBlock &BB);
+
+    bool runOnFunction(llvm::Function &F);
 };
 
 char ReplaceStdlibShiftPass::ID = 0;
@@ -5038,6 +4849,15 @@ bool ReplaceStdlibShiftPass::runOnBasicBlock(llvm::BasicBlock &bb) {
     return modifiedAny;
 }
 
+bool ReplaceStdlibShiftPass::runOnFunction(llvm::Function &F) {
+
+    bool modifiedAny = false;
+    for (llvm::BasicBlock &BB : F) {
+        modifiedAny |= runOnBasicBlock(BB);
+    }
+    return modifiedAny;
+}
+
 static llvm::Pass *CreateReplaceStdlibShiftPass() { return new ReplaceStdlibShiftPass(); }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -5071,11 +4891,7 @@ class FixBooleanSelectPass : public llvm::FunctionPass {
     static char ID;
     FixBooleanSelectPass() : FunctionPass(ID) {}
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_9
-    const char *getPassName() const { return "Resolve \"replace extract insert chains\""; }
-#else // LLVM 4.0+
     llvm::StringRef getPassName() const { return "Resolve \"replace extract insert chains\""; }
-#endif
     bool runOnFunction(llvm::Function &F);
 
   private:
@@ -5087,6 +4903,7 @@ char FixBooleanSelectPass::ID = 0;
 llvm::Instruction *FixBooleanSelectPass::fixSelect(llvm::SelectInst *sel, llvm::SExtInst *sext) {
     // Select instruction result type and its integer equivalent
     llvm::VectorType *orig_type = llvm::dyn_cast<llvm::VectorType>(sel->getType());
+    Assert(orig_type);
     llvm::VectorType *int_type = llvm::VectorType::getInteger(orig_type);
 
     // Result value and optional pointer to instruction to delete
@@ -5132,160 +4949,8 @@ llvm::Instruction *FixBooleanSelectPass::fixSelect(llvm::SelectInst *sel, llvm::
 
 bool FixBooleanSelectPass::runOnFunction(llvm::Function &F) {
     bool modifiedAny = false;
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_3 // LLVM 3.3 only
-
-    // Don't optimize generic targets.
-    if (g->target->getISA() == Target::GENERIC) {
-        return false;
-    }
-
-    for (llvm::Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-        llvm::BasicBlock *bb = &*I;
-        for (llvm::BasicBlock::iterator iter = bb->begin(), e = bb->end(); iter != e; ++iter) {
-            llvm::Instruction *inst = &*iter;
-
-            llvm::CmpInst *cmp = llvm::dyn_cast<llvm::CmpInst>(inst);
-
-            if (cmp && cmp->getType()->isVectorTy() && cmp->getType()->getVectorElementType()->isIntegerTy(1)) {
-
-                // Search for select instruction uses.
-                int selects = 0;
-                llvm::VectorType *sext_type = 0;
-                for (llvm::Instruction::use_iterator it = cmp->use_begin(); it != cmp->use_end(); ++it) {
-                    llvm::SelectInst *sel = llvm::dyn_cast<llvm::SelectInst>(*it);
-                    if (sel && sel->getType()->isVectorTy() && sel->getType()->getScalarSizeInBits() > 1) {
-                        selects++;
-                        // We pick the first one, but typical case when all select types are the same.
-                        sext_type = llvm::dyn_cast<llvm::VectorType>(sel->getType());
-                        break;
-                    }
-                }
-                if (selects == 0) {
-                    continue;
-                }
-                // Get an integer equivalent, if it's not yet an integer.
-                sext_type = llvm::VectorType::getInteger(sext_type);
-
-                // Do transformation
-                llvm::BasicBlock::iterator iter_copy = iter;
-                llvm::Instruction *next_inst = &*(++iter_copy);
-                // Create or reuse sext
-                llvm::SExtInst *sext = llvm::dyn_cast<llvm::SExtInst>(next_inst);
-                if (sext && sext->getOperand(0) == cmp && sext->getDestTy() == sext_type) {
-                    // This sext can be reused
-                } else {
-                    if (next_inst) {
-                        sext = new llvm::SExtInst(cmp, sext_type, "sext_cmp", next_inst);
-                    } else {
-                        sext = new llvm::SExtInst(cmp, sext_type, "sext_cmp", bb);
-                    }
-                }
-
-                // Walk and fix selects
-                std::vector<llvm::SelectInst *> sel_uses;
-                for (llvm::Instruction::use_iterator it = cmp->use_begin(); it != cmp->use_end(); ++it) {
-                    llvm::SelectInst *sel = llvm::dyn_cast<llvm::SelectInst>(*it);
-                    if (sel && sel->getType()->getScalarSizeInBits() == sext_type->getScalarSizeInBits()) {
-
-                        // Check that second operand is zero.
-                        llvm::Constant *false_cond = llvm::dyn_cast<llvm::Constant>(sel->getFalseValue());
-                        if (false_cond && false_cond->isZeroValue()) {
-                            sel_uses.push_back(sel);
-                            modifiedAny = true;
-                        }
-                    }
-                }
-
-                for (int i = 0; i < sel_uses.size(); i++) {
-                    fixSelect(sel_uses[i], sext);
-                }
-            }
-        }
-    }
-
-#endif // LLVM 3.3
 
     return modifiedAny;
 }
 
 static llvm::Pass *CreateFixBooleanSelectPass() { return new FixBooleanSelectPass(); }
-
-#ifdef ISPC_NVPTX_ENABLED
-///////////////////////////////////////////////////////////////////////////////
-// Detect addrspace(3)
-///////////////////////////////////////////////////////////////////////////////
-
-class PromoteLocalToPrivatePass : public llvm::BasicBlockPass {
-  public:
-    static char ID; // Pass identification, replacement for typeid
-    PromoteLocalToPrivatePass() : BasicBlockPass(ID) {}
-
-    bool runOnBasicBlock(llvm::BasicBlock &BB);
-};
-
-char PromoteLocalToPrivatePass::ID = 0;
-
-bool PromoteLocalToPrivatePass::runOnBasicBlock(llvm::BasicBlock &BB) {
-    std::vector<llvm::AllocaInst *> Allocas;
-
-    bool modifiedAny = false;
-
-#if 1
-restart:
-    for (llvm::BasicBlock::iterator I = BB.begin(), E = --BB.end(); I != E; ++I) {
-        llvm::Instruction *inst = &*I;
-        if (llvm::CallInst *ci = llvm::dyn_cast<llvm::CallInst>(inst)) {
-            llvm::Function *func = ci->getCalledFunction();
-            if (func && func->getName() == "llvm.trap") {
-                std::vector<llvm::Type *> funcTyArgs;
-                llvm::FunctionType *funcTy = llvm::FunctionType::get(
-                    /*Result=*/llvm::Type::getVoidTy(*g->ctx),
-                    /*Params=*/funcTyArgs,
-                    /*isVarArg=*/false);
-                llvm::InlineAsm *trap_ptx = llvm::InlineAsm::get(funcTy, "trap;", "", false);
-                assert(trap_ptx != NULL);
-                llvm::Instruction *trap_call = llvm::CallInst::Create(trap_ptx);
-                assert(trap_call != NULL);
-                llvm::ReplaceInstWithInst(ci, trap_call);
-                modifiedAny = true;
-                goto restart;
-            }
-        }
-    }
-#endif
-
-#if 0
-  llvm::Function *cvtFunc = m->module->getFunction("__cvt_loc2gen_var");
-
-  // Find allocas that are safe to promote, by looking at all instructions in
-  // the entry node
-  for (llvm::BasicBlock::iterator I = BB.begin(), E = --BB.end(); I != E; ++I)
-  {
-    llvm::Instruction *inst = &*I;
-    if (llvm::CallInst *ci = llvm::dyn_cast<llvm::CallInst>(inst))
-    {
-      llvm::Function *func = ci->getCalledFunction();
-      if (cvtFunc && (cvtFunc == func))
-      {
-#if 0
-        fprintf(stderr , "--found cvt-- name= %s \n",
-            I->getName().str().c_str());
-#endif
-        llvm::AllocaInst *alloca = new llvm::AllocaInst(LLVMTypes::Int64Type, "opt_loc2var", ci);
-        assert(alloca != NULL);
-#if 0
-        const int align = 8; // g->target->getNativeVectorAlignment();
-        alloca->setAlignment(align);
-#endif
-        ci->replaceAllUsesWith(alloca);
-        modifiedAny = true;
-      }
-    }
-  }
-#endif
-    return modifiedAny;
-}
-
-static llvm::Pass *CreatePromoteLocalToPrivatePass() { return new PromoteLocalToPrivatePass(); }
-
-#endif /* ISPC_NVPTX_ENABLED */

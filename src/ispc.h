@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2019, Intel Corporation
+  Copyright (c) 2010-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -35,19 +35,22 @@
     @brief Main ispc.header file. Defines Target, Globals and Opt classes.
 */
 
-#ifndef ISPC_H
-#define ISPC_H
+#pragma once
 
 #include "ispc_version.h"
+#include "target_enums.h"
+#include "target_registry.h"
 
 #if ISPC_LLVM_VERSION < OLDEST_SUPPORTED_LLVM || ISPC_LLVM_VERSION > LATEST_SUPPORTED_LLVM
-#error "Only LLVM 3.2 - 8.0 and 9.0 development branch are supported"
+#error "Only LLVM 6.0 - 10.0 and 11.0 development branch are supported"
 #endif
 
 #if defined(_WIN32) || defined(_WIN64)
 #define ISPC_HOST_IS_WINDOWS
 #elif defined(__linux__)
 #define ISPC_HOST_IS_LINUX
+#elif defined(__FreeBSD__)
+#define ISPC_HOST_IS_FREEBSD
 #elif defined(__APPLE__)
 #define ISPC_HOST_IS_APPLE
 #endif
@@ -70,11 +73,8 @@
 
 // Forward declarations of a number of widely-used LLVM types
 namespace llvm {
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
-class AttributeSet;
-#else // LLVM 5.0+
+
 class AttrBuilder;
-#endif
 class BasicBlock;
 class Constant;
 class ConstantValue;
@@ -90,11 +90,8 @@ class Type;
 class Value;
 class DIFile;
 class DIType;
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-class DIDescriptor;
-#else // LLVM 3.7+
+
 class DIScope;
-#endif
 } // namespace llvm
 
 class ArrayType;
@@ -116,11 +113,6 @@ struct VariableDeclaration;
 
 enum StorageClass { SC_NONE, SC_EXTERN, SC_STATIC, SC_TYPEDEF, SC_EXTERN_C };
 
-enum TargetOS { OS_WINDOWS, OS_LINUX, OS_MAC, OS_ANDROID, OS_IOS, OS_PS4, OS_ERROR };
-
-TargetOS StringToOS(std::string);
-constexpr TargetOS GetHostOS();
-
 /** @brief Representation of a range of positions in a source file.
 
     This class represents a range of characters in a source file
@@ -140,13 +132,8 @@ struct SourcePos {
     /** Prints the filename and line/column range to standard output. */
     void Print() const;
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    /** Returns a LLVM DIFile object that represents the SourcePos's file */
-    llvm::DIFile GetDIFile() const;
-#else
     /** Returns a LLVM DIFile object that represents the SourcePos's file */
     llvm::DIFile *GetDIFile() const;
-#endif
 
     bool operator==(const SourcePos &p2) const;
 };
@@ -154,15 +141,6 @@ struct SourcePos {
 /** Returns a SourcePos that encompasses the extent of both of the given
     extents. */
 SourcePos Union(const SourcePos &p1, const SourcePos &p2);
-
-// Assert
-
-extern void DoAssert(const char *file, int line, const char *expr);
-extern void DoAssertPos(SourcePos pos, const char *file, int line, const char *expr);
-
-#define Assert(expr) ((void)((expr) ? 0 : ((void)DoAssert(__FILE__, __LINE__, #expr), 0)))
-
-#define AssertPos(pos, expr) ((void)((expr) ? 0 : ((void)DoAssertPos(pos, __FILE__, __LINE__, #expr), 0)))
 
 /** @brief Structure that defines a compilation target
 
@@ -182,17 +160,15 @@ class Target {
         AVX = 2,
         // Not supported anymore. Use either AVX or AVX2.
         // AVX11 = 3,
-        AVX2 = 4,
-        KNL_AVX512 = 5,
-        SKX_AVX512 = 6,
-        GENERIC = 7,
-#ifdef ISPC_NVPTX_ENABLED
-        NVPTX,
-#endif
+        AVX2 = 3,
+        KNL_AVX512 = 4,
+        SKX_AVX512 = 5,
+        GENERIC = 6,
 #ifdef ISPC_ARM_ENABLED
-        NEON32,
-        NEON16,
-        NEON8,
+        NEON,
+#endif
+#ifdef ISPC_WASM_ENABLED
+        WASM,
 #endif
         NUM_ISAS
     };
@@ -200,24 +176,11 @@ class Target {
     /** Initializes the given Target pointer for a target of the given
         name, if the name is a known target.  Returns true if the
         target was initialized and false if the name is unknown. */
-    Target(const char *arch, const char *cpu, const char *isa, bool pic, bool printTarget,
-           std::string genenricAsSmth = "");
-
-    /** Returns a comma-delimited string giving the names of the currently
-        supported compilation targets. */
-    static const char *SupportedTargets();
-
-    /** Returns a comma-delimited string giving the names of the currently
-     *  supported target OSes */
-    static const char *SupportedOSes();
+    Target(Arch arch, const char *cpu, ISPCTarget isa, bool pic, bool printTarget);
 
     /** Returns a comma-delimited string giving the names of the currently
         supported CPUs. */
     static std::string SupportedCPUs();
-
-    /** Returns a comma-delimited string giving the names of the currently
-        supported architectures. */
-    static const char *SupportedArchs();
 
     /** Returns a triple string specifying the target architecture, vendor,
         and environment. */
@@ -251,6 +214,9 @@ class Target {
     /** Mark LLVM function with target specific attribute, if required. */
     void markFuncWithTargetAttr(llvm::Function *func);
 
+    /* Check if target is GENERIC and internally calls lGenericTypeLayoutIndeterminate */
+    bool IsGenericTypeLayoutIndeterminate(llvm::Type *type);
+
     const llvm::Target *getTarget() const { return m_target; }
 
     // Note the same name of method for 3.1 and 3.2+, this allows
@@ -260,11 +226,11 @@ class Target {
     /** Reports if Target object has valid state. */
     bool isValid() const { return m_valid; }
 
+    ISPCTarget getISPCTarget() const { return m_ispc_target; }
+
     ISA getISA() const { return m_isa; }
 
-    std::string getTreatGenericAsSmth() const { return m_treatGenericAsSmth; }
-
-    std::string getArch() const { return m_arch; }
+    Arch getArch() const { return m_arch; }
 
     bool is32Bit() const { return m_is32Bit; }
 
@@ -321,14 +287,14 @@ class Target {
         (due to bad parameters passed to constructor). */
     bool m_valid;
 
+    /** ISPC target being used */
+    ISPCTarget m_ispc_target;
+
     /** Instruction set being compiled to. */
     ISA m_isa;
 
-    /** The variable shows if we use special mangling with generic target. */
-    std::string m_treatGenericAsSmth;
-
     /** Target system architecture.  (e.g. "x86-64", "x86"). */
-    std::string m_arch;
+    Arch m_arch;
 
     /** Is the target architecture 32 or 64 bit */
     bool m_is32Bit;
@@ -342,16 +308,10 @@ class Target {
     /** Target-specific function attributes */
     std::vector<std::pair<std::string, std::string>> m_funcAttributes;
 
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_3
     /** Target-specific LLVM attribute, which has to be attached to every
         function to ensure that it is generated for correct target architecture.
         This is requirement was introduced in LLVM 3.3 */
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_4_0
-    llvm::AttributeSet *m_tf_attributes;
-#else // LLVM 5.0+
     llvm::AttrBuilder *m_tf_attributes;
-#endif
-#endif
 
     /** Native vector width of the vector instruction set.  Note that this
         value is directly derived from the ISA being used (e.g. it's 4 for
@@ -525,6 +485,10 @@ struct Opt {
     /** Disables optimizations that coalesce incoherent scalar memory
         access from gathers into wider vector operations, when possible. */
     bool disableCoalescing;
+
+    /** Disable using zmm registers for avx512 target in favour of ymm.
+        Affects only >= 512 bit wide targets and only if avx512vl is available */
+    bool disableZMM;
 };
 
 /** @brief This structure collects together a number of global variables.
@@ -538,8 +502,12 @@ struct Opt {
 struct Globals {
     Globals();
 
+    /** TargetRegistry holding all stdlib bitcode. */
+    TargetLibRegistry *target_registry;
+
     /** Optimization option settings */
     Opt opt;
+
     /** Compilation target information */
     Target *target;
 
@@ -625,9 +593,7 @@ struct Globals {
     // readelf --debug-dump=info object.o | grep -A 2 'Compilation Unit @'
     // on Mac:
     // xcrun dwarfdump -r0 object.o
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_5
     int generateDWARFVersion;
-#endif
 
     /** If true, function names are mangled by appending the target ISA and
         vector width to them. */
@@ -665,6 +631,12 @@ struct Globals {
 
     /** Lines for which warnings are turned off. */
     std::map<std::pair<int, std::string>, bool> turnOffWarnings;
+
+    /* If true, we are compiling for more than one target. */
+    bool isMultiTargetCompilation;
+
+    /* Number of errors to show in ISPC. */
+    int errorLimit;
 };
 
 enum {
@@ -701,5 +673,3 @@ enum {
 
 extern Globals *g;
 extern Module *m;
-
-#endif // ISPC_H

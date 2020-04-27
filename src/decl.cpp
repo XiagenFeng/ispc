@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2013, Intel Corporation
+  Copyright (c) 2010-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -165,22 +165,13 @@ const Type *DeclSpecs::GetBaseType(SourcePos pos) const {
     retType = lApplyTypeQualifiers(typeQualifiers, retType, pos);
 
     if (soaWidth > 0) {
-#ifdef ISPC_NVPTX_ENABLED
-#if 0 /* see stmt.cpp in DeclStmt::EmitCode for work-around of SOAType Declaration */
-        if (g->target->getISA() == Target::NVPTX)
-        {
-            Error(pos, "\"soa\" data types are currently not supported with \"nvptx\" target.");
-            return NULL;
-        }
-#endif
-#endif /* ISPC_NVPTX_ENABLED */
         const StructType *st = CastType<StructType>(retType);
 
         if (st == NULL) {
             Error(pos,
                   "Illegal to provide soa<%d> qualifier with non-struct "
                   "type \"%s\".",
-                  soaWidth, retType->GetString().c_str());
+                  soaWidth, retType ? retType->GetString().c_str() : "NULL");
             return NULL;
         } else if (soaWidth <= 0 || (soaWidth & (soaWidth - 1)) != 0) {
             Error(pos,
@@ -416,22 +407,14 @@ void Declarator::InitFromType(const Type *baseType, DeclSpecs *ds) {
             return;
         }
 
-#ifdef ISPC_NVPTX_ENABLED
-#if 0 /* NVPTX */
-        if (baseType->IsUniformType())
-        {
-          fprintf(stderr, " detected uniform array of size= %d  array= %s\n" ,arraySize,
-              baseType->IsArrayType() ? " true " : " false ");
-        }
-#endif
-#endif /* ISPC_NVPTX_ENABLED */
         const Type *arrayType = new ArrayType(baseType, arraySize);
         if (child != NULL) {
             child->InitFromType(arrayType, ds);
             type = child->type;
             name = child->name;
-        } else
+        } else {
             type = arrayType;
+        }
     } else if (kind == DK_FUNCTION) {
         llvm::SmallVector<const Type *, 8> args;
         llvm::SmallVector<std::string, 8> argNames;
@@ -587,17 +570,17 @@ void Declarator::InitFromType(const Type *baseType, DeclSpecs *ds) {
         if (ds != NULL) {
             for (int i = 0; i < (int)ds->declSpecList.size(); ++i) {
                 std::string str = ds->declSpecList[i].first;
-                SourcePos pos = ds->declSpecList[i].second;
+                SourcePos ds_spec_pos = ds->declSpecList[i].second;
 
                 if (str == "safe")
                     (const_cast<FunctionType *>(functionType))->isSafe = true;
                 else if (!strncmp(str.c_str(), "cost", 4)) {
                     int cost = atoi(str.c_str() + 4);
                     if (cost < 0)
-                        Error(pos, "Negative function cost %d is illegal.", cost);
+                        Error(ds_spec_pos, "Negative function cost %d is illegal.", cost);
                     (const_cast<FunctionType *>(functionType))->costOverride = cost;
                 } else
-                    Error(pos, "__declspec parameter \"%s\" unknown.", str.c_str());
+                    Error(ds_spec_pos, "__declspec parameter \"%s\" unknown.", str.c_str());
             }
         }
 

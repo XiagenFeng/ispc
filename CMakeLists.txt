@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2018-2019, Intel Corporation
+#  Copyright (c) 2018-2020, Intel Corporation
 #  All rights reserved.
 #
 #  Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,7 @@
 #
 # ispc CMakeLists.txt
 #
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.13)
 
 if (UNIX)
     set(CMAKE_C_COMPILER "clang")
@@ -45,9 +45,10 @@ set(ISPC_BUILD TRUE)
 project(${PROJECT_NAME})
 
 option(ARM_ENABLED "Enable ARM support" ON)
-option(NVPTX_ENABLED "Enable NVPTX support" OFF)
+option(WASM_ENABLED "Enable experimental Web Assembly support" OFF)
 option(ISPC_INCLUDE_EXAMPLES "Generate build targets for the ISPC examples" ON)
 option(ISPC_INCLUDE_TESTS "Generate build targets for the ISPC tests." ON)
+option(ISPC_INCLUDE_BENCHMARKS "Generate build targets for the ISPC tests." OFF)
 option(ISPC_INCLUDE_UTILS "Generate build targets for the utils." ON)
 option(ISPC_PREPARE_PACKAGE "Generate build targets for ispc package" OFF)
 option(ISPC_NO_DUMPS "Turn off functionality, which requires LLVM dump() functions" OFF)
@@ -57,6 +58,7 @@ option(ISPC_CROSS "Build ISPC with cross compilation support" OFF)
 if (ISPC_CROSS)
     option(ISPC_WINDOWS_TARGET "Build ISPC with windows target support" ON)
     option(ISPC_LINUX_TARGET "Build ISPC with linux target support" ON)
+    option(ISPC_FREEBSD_TARGET "Build ISPC with freebsd target support" ON)
     option(ISPC_MACOS_TARGET "Build ISPC with macos target support" ON)
     option(ISPC_IOS_TARGET "Build ISPC with ios target support" ON)
     option(ISPC_ANDROID_TARGET "Build ISPC with android target support" ON)
@@ -71,9 +73,15 @@ if (ISPC_CROSS)
     elseif (APPLE)
         if ((ISPC_LINUX_TARGET OR ISPC_ANDROID_TARGET) AND NOT ISPC_ANDROID_NDK_PATH)
             message (FATAL_ERROR "Set ISPC_ANDROID_NDK_PATH variable for cross compilation to Linux/Android e.g. /Users/Shared/android-ndk-r20")
-        elseif (ISPC_IOS_TARGET AND NOT ISPC_IOS_SDK_PATH)
-            message (FATAL_ERROR "Set ISPC_IOS_SDK_PATH variable for cross compilation to IOS "
-                "e.g. /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk")
+        endif()
+        if (ISPC_IOS_TARGET AND NOT ISPC_IOS_SDK_PATH)
+            # Use standard iOS SDK location if this is not specified.
+            set(command "xcrun" "--show-sdk-path" "--sdk" "iphoneos")
+            execute_process(COMMAND ${command}
+                OUTPUT_VARIABLE ISPC_IOS_SDK_PATH
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
+            message(STATUS "Using iOS SDK path ${ISPC_IOS_SDK_PATH}")
         endif()
     else()
         if (ISPC_MACOS_TARGET AND NOT ISPC_MACOS_SDK_PATH)
@@ -85,17 +93,31 @@ else()
         set(ISPC_WINDOWS_TARGET ON)
     elseif (APPLE)
         set(ISPC_MACOS_TARGET ON)
+    elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+        set(ISPC_FREEBSD_TARGET ON)
     else()
         set(ISPC_LINUX_TARGET ON)
+    endif()
+endif()
+
+if (APPLE)
+    # Use standard macOS SDK location if this is not specified.
+    if (NOT ISPC_MACOS_SDK_PATH)
+        set(command "xcrun" "--show-sdk-path")
+        execute_process(COMMAND ${command}
+            OUTPUT_VARIABLE ISPC_MACOS_SDK_PATH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        message(STATUS "Using macOS SDK path ${ISPC_MACOS_SDK_PATH}")
     endif()
 endif()
 
 if (UNIX)
     option(ISPC_STATIC_STDCXX_LINK "Link statically with libstdc++ and libgcc" OFF)
     if (ISPC_PREPARE_PACKAGE AND (NOT APPLE))
-        option(ISPC_STATIC_LINK "Link statically" ON)
+        option(ISPC_STATIC_LINK "Link statically (all except glibc)" ON)
     else()
-        option(ISPC_STATIC_LINK "Link statically" OFF)
+        option(ISPC_STATIC_LINK "Link statically (all except glibc)" OFF)
     endif()
     option(ISPC_USE_ASAN "Build ispc with address sanitizer instrumentation using clang compiler" OFF)
 endif()
@@ -107,10 +129,18 @@ set(OUTPUT_DEBUG Debug/bin)
 set(OUTPUT_RELEASE Release/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin )
 
-if(NOT CMAKE_BUILD_TYPE)
+if(CMAKE_BUILD_TYPE)
+    # Validate build type
+    set(CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo")
+
+    string(FIND "${CONFIGURATION_TYPES}" "${CMAKE_BUILD_TYPE}" MATCHED_CONFIG)
+    if (${MATCHED_CONFIG} EQUAL -1)
+         message(FATAL_ERROR "CMAKE_BUILD_TYPE (${CMAKE_BUILD_TYPE}) allows only the following values: ${CONFIGURATION_TYPES}")
+    endif()
+else(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
     message(STATUS "Build type not specified: Use Release by default.")
-endif(NOT CMAKE_BUILD_TYPE)
+endif(CMAKE_BUILD_TYPE)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/FixWindowsPath.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/LLVMConfig.cmake)
@@ -123,7 +153,7 @@ find_package(Python3 REQUIRED)
         message(FATAL_ERROR "Python interpreter is not found")
     endif()
 
-find_package(BISON 2.4 REQUIRED)
+find_package(BISON 3.0 REQUIRED)
     if (BISON_FOUND)
         set(BISON_INPUT src/parse.yy)
         set(BISON_CPP_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/parse.cc)
@@ -161,14 +191,29 @@ set (ISPC_TARGETS
         avx1-i32x8 avx1-i32x16 avx1-i64x4
         avx2-i32x4 avx2-i32x8 avx2-i32x16 avx2-i64x4
         avx512knl-i32x16
-        avx512skx-i32x8 avx512skx-i32x16
+        avx512skx-i32x16
         generic-1 generic-4 generic-8 generic-16 generic-32 generic-64)
+if (${LLVM_VERSION_NUMBER} VERSION_GREATER_EQUAL "8.0.0")
+    list(APPEND ISPC_TARGETS avx512skx-i32x8)
+endif()
+if (WASM_ENABLED)
+    find_program(EMCC_EXECUTABLE emcc)
+    if (NOT EMCC_EXECUTABLE)
+        message(FATAL_ERROR "emcc not found!")
+    endif()
+    message(STATUS "EMCC_EXECUTABLE: ${EMCC_EXECUTABLE}")
+    if (${LLVM_VERSION_NUMBER} VERSION_GREATER_EQUAL "7.0.0")
+        list(APPEND ISPC_TARGETS wasm-i32x4)
+    else()
+        message (FATAL_ERROR "WebAssembly is not supported with LLVM less than 7.0")
+    endif()
+endif()
 
 set(CLANG_LIBRARY_LIST clangFrontend clangDriver clangSerialization clangParse clangSema clangAnalysis clangAST clangBasic clangEdit clangLex)
-set(LLVM_COMPONENTS engine ipo bitreader bitwriter instrumentation linker)
-# Component "option" was introduced in 3.3 and starting with 3.4 it is required for the link step.
-if (${LLVM_VERSION_NUMBER} VERSION_GREATER "3.3.0")
-    set(LLVM_COMPONENTS ${LLVM_COMPONENTS} option)
+set(LLVM_COMPONENTS engine ipo bitreader bitwriter instrumentation linker option)
+
+if (${LLVM_VERSION_NUMBER} VERSION_GREATER_EQUAL "10.0.0")
+    list(APPEND LLVM_COMPONENTS frontendopenmp)
 endif()
 
 list(APPEND LLVM_COMPONENTS x86)
@@ -176,9 +221,8 @@ if (ARM_ENABLED)
     list(APPEND LLVM_COMPONENTS arm aarch64)
     list(APPEND ISPC_TARGETS neon-i8x16 neon-i16x8 neon-i32x4 neon-i32x8)
 endif()
-if (NVPTX_ENABLED)
-    list(APPEND LLVM_COMPONENTS nvptx)
-    list(APPEND ISPC_TARGETS nvptx)
+if (WASM_ENABLED)
+    list(APPEND LLVM_COMPONENTS webassembly)
 endif()
 get_llvm_libfiles(LLVM_LIBRARY_LIST ${LLVM_COMPONENTS})
 get_llvm_cppflags(LLVM_CPP_FLAGS)
@@ -195,6 +239,8 @@ target_sources(${PROJECT_NAME}
     PRIVATE
         "src/ast.cpp"
         "src/ast.h"
+        "src/bitcode_lib.cpp"
+        "src/bitcode_lib.h"
         "src/builtins.cpp"
         "src/builtins.h"
         "src/cbackend.cpp"
@@ -220,6 +266,10 @@ target_sources(${PROJECT_NAME}
         "src/stmt.h"
         "src/sym.cpp"
         "src/sym.h"
+        "src/target_enums.cpp"
+        "src/target_enums.h"
+        "src/target_registry.cpp"
+        "src/target_registry.h"
         "src/type.cpp"
         "src/type.h"
         "src/util.cpp"
@@ -249,8 +299,9 @@ endif()
 if (ARM_ENABLED)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_ARM_ENABLED)
 endif()
-if (NVPTX_ENABLED)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_NVPTX_ENABLED)
+
+if (WASM_ENABLED)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_WASM_ENABLED)
 endif()
 
 if (ISPC_NO_DUMPS)
@@ -263,6 +314,9 @@ if (NOT ISPC_WINDOWS_TARGET)
 endif()
 if (NOT ISPC_LINUX_TARGET)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_LINUX_TARGET_OFF)
+endif()
+if (NOT ISPC_FREEBSD_TARGET)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_FREEBSD_TARGET_OFF)
 endif()
 if (NOT ISPC_MACOS_TARGET)
     target_compile_definitions(${PROJECT_NAME} PRIVATE ISPC_MACOS_TARGET_OFF)
@@ -290,45 +344,47 @@ if (UNIX)
                            -Wformat -Wformat-security -fpie -fwrapv)
     set_source_files_properties("src/cbackend.cpp" PROPERTIES COMPILE_FLAGS "-fno-exceptions")
 else()
-    target_compile_options(${PROJECT_NAME} PRIVATE /W3 /wd4146 /wd4800 /wd4996 /wd4355 /wd4624 /wd4244 /wd4141 /wd4291 /wd4018)
+    target_compile_options(${PROJECT_NAME} PRIVATE /W3 /wd4146 /wd4800 /wd4996 /wd4355 /wd4624 /wd4244 /wd4141 /wd4291 /wd4018 /wd4267)
     # Security options
     target_compile_options(${PROJECT_NAME} PRIVATE /GS /DynamicBase)
     set_source_files_properties(${FLEX_OUTPUT} PROPERTIES COMPILE_FLAGS "/wd4005 /wd4003")
     set_source_files_properties(${BISON_OUTPUT} PROPERTIES COMPILE_FLAGS "/wd4005 /wd4065")
 endif()
 
-if (${LLVM_VERSION_NUMBER} VERSION_GREATER "3.4.0")
-    target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_11)
-    if (UNIX)
-        set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
-        target_compile_options(${PROJECT_NAME} PRIVATE -Wno-c99-extensions -Wno-deprecated-register -fno-rtti)
-        if (ISPC_USE_ASAN)
-            target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
-        endif()
+# Set C++ standard to C++14.
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    CXX_STANDARD 14
+    CXX_STANDARD_REQUIRED YES)
+
+if (UNIX)
+    set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-c99-extensions -Wno-deprecated-register -fno-rtti)
+    if (ISPC_USE_ASAN)
+        target_compile_options(${PROJECT_NAME} PRIVATE -fsanitize=address)
     endif()
 endif()
 
 # Link options
 if (WIN32)
     if (NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
-        set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/OPT:REF /OPT:ICF")
+        target_link_options(${PROJECT_NAME} PUBLIC /OPT:REF /OPT:ICF)
     endif()
 elseif (APPLE)
 else()
     # Link options for security hardening.
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-z noexecstack -z relro -z now -Wl,--gc-sections")
+    target_link_options(${PROJECT_NAME}
+        PUBLIC "SHELL: -z noexecstack"
+               "SHELL: -z relro"
+               "SHELL: -z now"
+               "SHELL: -Wl,--gc-sections")
 endif()
 
-if (ISPC_STATIC_STDCXX_LINK)
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-static-libgcc -static-libstdc++")
-endif()
-
-if (ISPC_STATIC_LINK)
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-static")
+if (ISPC_STATIC_STDCXX_LINK OR ISPC_STATIC_LINK)
+    target_link_options(${PROJECT_NAME} PUBLIC -static-libgcc -static-libstdc++)
 endif()
 
 if (ISPC_USE_ASAN)
-    set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-fsanitize=address")
+    target_link_options(${PROJECT_NAME} PUBLIC -fsanitize=address)
 endif()
 
 # Link against Clang libraries
@@ -340,19 +396,18 @@ target_link_libraries(${PROJECT_NAME} ${CLANG_LIBRARY_FULL_PATH_LIST})
 
 # Link against LLVM libraries
 target_link_libraries(${PROJECT_NAME} ${LLVM_LIBRARY_LIST})
+
+# System libraries, our own and transitive dependencies from LLVM libs.
 if (WIN32)
     target_link_libraries(${PROJECT_NAME} version.lib shlwapi.lib odbc32.lib odbccp32.lib)
 else()
-    target_link_libraries(${PROJECT_NAME} pthread dl)
-    if (${LLVM_VERSION_NUMBER} VERSION_GREATER "3.4.0")
-        target_link_libraries(${PROJECT_NAME} z)
-    endif()
     if (APPLE)
-        target_link_libraries(${PROJECT_NAME} curses)
+        target_link_libraries(${PROJECT_NAME} pthread z curses)
     else()
-        target_link_libraries(${PROJECT_NAME} tinfo)
-        if (${LLVM_VERSION_NUMBER} VERSION_GREATER "3.3.0")
-            target_link_libraries(${PROJECT_NAME} curses)
+        if (ISPC_STATIC_LINK)
+            target_link_libraries(${PROJECT_NAME} pthread z.a tinfo.a curses.a)
+        else()
+            target_link_libraries(${PROJECT_NAME} pthread z tinfo curses)
         endif()
     endif()
 endif()
@@ -375,16 +430,37 @@ if (ISPC_INCLUDE_TESTS)
     add_subdirectory(tests)
 endif()
 
+if (ISPC_INCLUDE_BENCHMARKS)
+    enable_testing()
+    add_subdirectory(benchmarks)
+endif()
+
 # Install
 install (TARGETS ${PROJECT_NAME} DESTINATION bin)
 if (ISPC_PREPARE_PACKAGE)
     install (DIRECTORY "${PROJECT_SOURCE_DIR}/examples/" DESTINATION examples PATTERN "portable" EXCLUDE)
     install (DIRECTORY "${PROJECT_SOURCE_DIR}/contrib/" DESTINATION contrib)
     install (FILES "${PROJECT_SOURCE_DIR}/LICENSE.txt" DESTINATION .)
+    install (FILES "${PROJECT_SOURCE_DIR}/third-party-programs.txt" DESTINATION .)
     install (FILES "${PROJECT_SOURCE_DIR}/docs/ReleaseNotes.txt" DESTINATION .)
+
+    # Get ispc version
+    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/ispc_version.h" ispc_ver)
+    string(REGEX MATCH "ISPC_VERSION \"([0-9]*)\.([0-9]*)\.([0-9]*[a-z]*)" _ ${ispc_ver})
+    set(ISPC_VERSION_MAJOR ${CMAKE_MATCH_1})
+    set(ISPC_VERSION_MINOR ${CMAKE_MATCH_2})
+    set(ISPC_VERSION_PATCH ${CMAKE_MATCH_3})
+    if (${ISPC_VERSION_PATCH} MATCHES ".*dev")
+        set (REPO_TAG "master")
+    else()
+        set (REPO_TAG "v${ISPC_VERSION_MAJOR}.${ISPC_VERSION_MINOR}.${ISPC_VERSION_PATCH}")
+    endif()
+
+    # Clone corresponding version of documentation
     include(ExternalProject)
     ExternalProject_Add(ispc_web
       GIT_REPOSITORY    https://github.com/ispc/ispc.github.com.git
+      GIT_TAG ${REPO_TAG}
       PREFIX ispc_web
       SOURCE_DIR ispc_web/repo
       CONFIGURE_COMMAND cmake -E echo "Skipping configure step."
@@ -398,7 +474,7 @@ if (ISPC_PREPARE_PACKAGE)
                    ${ISPC_WEB_SOURCE_DIR}/perfguide.html)
 
     install(FILES ${ISPC_DOCS} DESTINATION .)
-    install(DIRECTORY "${ISPC_WEB_SOURCE_DIR}/css" DESTINATION css)
+    install(DIRECTORY "${ISPC_WEB_SOURCE_DIR}/css" DESTINATION .)
 
     # CPack configuration
     if (WIN32)
@@ -408,17 +484,16 @@ if (ISPC_PREPARE_PACKAGE)
         set(CPACK_GENERATOR "TGZ")
         if (APPLE)
             set(ISPC_SYSTEM_NAME "macOS")
+        elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+            set(ISPC_SYSTEM_NAME "freebsd")
         else()
             set(ISPC_SYSTEM_NAME "linux")
         endif()
     endif()
     set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
-    # Get ispc version
-    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/ispc_version.h" ispc_ver)
-    string(REGEX MATCH "ISPC_VERSION \"([0-9]*)\.([0-9]*)\.([0-9]*[a-z]*)" _ ${ispc_ver})
-    set(CPACK_PACKAGE_VERSION_MAJOR ${CMAKE_MATCH_1})
-    set(CPACK_PACKAGE_VERSION_MINOR ${CMAKE_MATCH_2})
-    set(CPACK_PACKAGE_VERSION_PATCH ${CMAKE_MATCH_3})
+    set(CPACK_PACKAGE_VERSION_MAJOR ${ISPC_VERSION_MAJOR})
+    set(CPACK_PACKAGE_VERSION_MINOR ${ISPC_VERSION_MINOR})
+    set(CPACK_PACKAGE_VERSION_PATCH ${ISPC_VERSION_PATCH})
     if (${CPACK_PACKAGE_VERSION_PATCH} MATCHES ".*dev")
         string(CONCAT CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}"
                              "-trunk"

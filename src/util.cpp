@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2019, Intel Corporation
+  Copyright (c) 2010-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -65,11 +65,7 @@
 #include <algorithm>
 #include <set>
 
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-#include <llvm/DataLayout.h>
-#else // LLVM 3.3+
 #include <llvm/IR/DataLayout.h>
-#endif
 
 /** Returns the width of the terminal where the compiler is running.
     Finding this out may fail in a variety of reasonable situations (piping
@@ -99,7 +95,7 @@ int TerminalWidth() {
 static bool lHaveANSIColors() {
     static bool r = (getenv("TERM") != NULL && strcmp(getenv("TERM"), "dumb") != 0);
 #ifndef ISPC_HOST_IS_WINDOWS
-    r &= isatty(2);
+    r &= (bool)isatty(2);
     r |= g->forceColoredOutput;
 #endif // !ISPC_HOST_IS_WINDOWS
     return r;
@@ -159,8 +155,12 @@ static void lPrintFileLineContext(SourcePos p) {
     while ((c = fgetc(f)) != EOF) {
         // Don't print more than three lines of context.  (More than that,
         // and we're probably doing the wrong thing...)
-        if (curLine >= std::max(p.first_line, p.last_line - 2) && curLine <= p.last_line)
+        if (curLine >= std::max(p.first_line, p.last_line - 2) && curLine <= p.last_line) {
+            if (c == '\t')
+                c = ' ';
+
             fputc(c, stderr);
+        }
         if (c == '\n')
             ++curLine;
         if (curLine > p.last_line)
@@ -305,7 +305,7 @@ static void lPrint(const char *type, bool isError, SourcePos p, const char *fmt,
     char *errorBuf, *formattedBuf;
     if (vasprintf(&errorBuf, fmt, args) == -1) {
         fprintf(stderr, "vasprintf() unable to allocate memory!\n");
-        abort();
+        exit(1);
     }
 
     int indent = 0;
@@ -349,8 +349,11 @@ static void lPrint(const char *type, bool isError, SourcePos p, const char *fmt,
 }
 
 void Error(SourcePos p, const char *fmt, ...) {
-    if (m != NULL)
+    if (m != NULL) {
         ++m->errorCount;
+        if ((g->errorLimit != -1) && (g->errorLimit <= m->errorCount - 1))
+            return;
+    }
     if (g->quiet)
         return;
 
@@ -428,7 +431,7 @@ static void lPrintBugText() {
                     "like to fix!\n***\n");
 }
 
-void FatalError(const char *file, int line, const char *message) {
+[[noreturn]] void FatalError(const char *file, int line, const char *message) {
     fprintf(stderr, "%s(%d): FATAL ERROR: %s\n", file, line, message);
     lPrintBugText();
     abort();
@@ -613,4 +616,13 @@ bool VerifyDataLayoutCompatibility(const std::string &module_dl, const std::stri
     }
 
     return true;
+}
+
+bool IsStdin(const char *filepath) {
+    Assert(filepath != nullptr);
+    if (!strcmp(filepath, "-")) {
+        return true;
+    } else {
+        return false;
+    }
 }

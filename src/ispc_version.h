@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015-2019, Intel Corporation
+  Copyright (c) 2015-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -35,35 +35,25 @@
     @brief defines the ISPC version
 */
 
-#ifndef ISPC_VERSION_H
-#define ISPC_VERSION_H
+#pragma once
 
 #define ISPC_VERSION_MAJOR 1
-#define ISPC_VERSION_MINOR 12
-#define ISPC_VERSION "1.12.0"
+#define ISPC_VERSION_MINOR 13
+#define ISPC_VERSION "1.13.0"
 #include "llvm/Config/llvm-config.h"
 
 #define ISPC_LLVM_VERSION (LLVM_VERSION_MAJOR * 10000 + LLVM_VERSION_MINOR * 100)
 
-#define ISPC_LLVM_3_2 30200
-#define ISPC_LLVM_3_3 30300
-#define ISPC_LLVM_3_4 30400
-#define ISPC_LLVM_3_5 30500
-#define ISPC_LLVM_3_6 30600
-#define ISPC_LLVM_3_7 30700
-#define ISPC_LLVM_3_8 30800
-#define ISPC_LLVM_3_9 30900
-#define ISPC_LLVM_4_0 40000
-#define ISPC_LLVM_5_0 50000
 #define ISPC_LLVM_6_0 60000
 #define ISPC_LLVM_7_0 70000
 #define ISPC_LLVM_7_1 70100
 #define ISPC_LLVM_8_0 80000
 #define ISPC_LLVM_9_0 90000
 #define ISPC_LLVM_10_0 100000
+#define ISPC_LLVM_11_0 110000
 
-#define OLDEST_SUPPORTED_LLVM ISPC_LLVM_3_2
-#define LATEST_SUPPORTED_LLVM ISPC_LLVM_10_0
+#define OLDEST_SUPPORTED_LLVM ISPC_LLVM_6_0
+#define LATEST_SUPPORTED_LLVM ISPC_LLVM_11_0
 
 #ifdef __ispc__xstr
 #undef __ispc__xstr
@@ -77,5 +67,3 @@
 #if ISPC_LLVM_VERSION < OLDEST_SUPPORTED_LLVM || ISPC_LLVM_VERSION > LATEST_SUPPORTED_LLVM
 #error "Unhandled LLVM version"
 #endif
-
-#endif // ISPC_VERSION_H

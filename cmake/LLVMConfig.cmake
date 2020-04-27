@@ -97,14 +97,15 @@ function(run_llvm_config output_var)
     set(${output_var} ${${output_var}} PARENT_SCOPE)
 endfunction()
 
-run_llvm_config(CXX_FLAGS "--cxxflags")
-# Check LLVM_ENABLE_DUMP flag
-if (${LLVM_VERSION} GREATER_EQUAL "LLVM_5_0")
-    string(FIND CXX_FLAGS "LLVM_ENABLE_DUMP" ENABLED_DUMP)
-    if (NOT ${ENABLED_DUMP} GREATER -1)
-        message(FATAL_ERROR "LLVM was built without DLLVM_ENABLE_DUMP enabled")
-    endif()
+run_llvm_config(LLVM_VERSION_NUMBER "--version")
+message(STATUS "Detected LLVM version: ${LLVM_VERSION_NUMBER}")
+
+run_llvm_config(ASSERTIONS "--assertion-mode")
+if (NOT ${ASSERTIONS} STREQUAL "ON")
+    message(WARNING "LLVM was built without assertions enabled (-DLLVM_ENABLE_ASSERTIONS=OFF). This disables dumps, which are required for ISPC to be fully functional.")
 endif()
+
+run_llvm_config(CXX_FLAGS "--cxxflags")
 # Check DNDEBUG flag
 if (NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
     string(FIND CXX_FLAGS "NDEBUG" NDEBUG_DEF)
@@ -122,21 +123,9 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
     endif()
 endif()
 
-run_llvm_config(LLVM_VERSION_NUMBER "--version")
-
 function(get_llvm_libfiles resultList)
     run_llvm_config(LLVM_LIBS "--libfiles" ${ARGN})
     str_to_list("${LLVM_LIBS}" tmpList)
-    # bug in llvm-config on Windows from LLVM 3.8 and older
-    if (${LLVM_VERSION_NUMBER} VERSION_LESS "3.9.0")
-        if (WIN32)
-            foreach(llvm_lib ${tmpList})
-                string(REGEX REPLACE "lib(LLVM[-.a-zA-Z0-9]+)\.a$" "\\1\.lib" llvm_lib "${llvm_lib}")
-                list(APPEND FIXED_LLVM_LIBRARY_LIST ${llvm_lib})
-            endforeach()
-            set(tmpList ${FIXED_LLVM_LIBRARY_LIST})
-        endif()
-    endif()
     set(${resultList} ${tmpList} PARENT_SCOPE)
 endfunction()
 

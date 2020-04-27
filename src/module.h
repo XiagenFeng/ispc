@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2015, Intel Corporation
+  Copyright (c) 2010-2019, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -36,16 +36,11 @@
     of the results of compiling a source file.
  */
 
-#ifndef ISPC_MODULE_H
-#define ISPC_MODULE_H 1
+#pragma once
 
 #include "ast.h"
 #include "ispc.h"
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_4
-#include <llvm/DebugInfo.h>
-#elif ISPC_LLVM_VERSION >= ISPC_LLVM_3_5
 #include <llvm/IR/DebugInfo.h>
-#endif
 
 namespace llvm {
 class raw_string_ostream;
@@ -140,7 +135,7 @@ class Module {
         @return             Number of errors encountered when compiling
                             srcFile.
      */
-    static int CompileAndOutput(const char *srcFile, const char *arch, const char *cpu, const char *targets,
+    static int CompileAndOutput(const char *srcFile, Arch arch, const char *cpu, std::vector<ISPCTarget> targets,
                                 OutputFlags outputFlags, OutputType outputType, const char *outFileName,
                                 const char *headerFileName, const char *includeFileName, const char *depsFileName,
                                 const char *depsTargetName, const char *hostStubFileName, const char *devStubFileName);
@@ -158,11 +153,7 @@ class Module {
     /** The diBuilder manages generating debugging information */
     llvm::DIBuilder *diBuilder;
 
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_4 && ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DICompileUnit diCompileUnit;
-#elif ISPC_LLVM_VERSION >= ISPC_LLVM_3_7
     llvm::DICompileUnit *diCompileUnit;
-#endif // LLVM_3_4+
 
   private:
     const char *filename;
@@ -199,5 +190,3 @@ inline Module::OutputFlags &operator&=(Module::OutputFlags &lhs, const __underly
 inline Module::OutputFlags operator|(const Module::OutputFlags lhs, const Module::OutputFlags rhs) {
     return (Module::OutputFlags)((__underlying_type(Module::OutputFlags))lhs | rhs);
 }
-
-#endif // ISPC_MODULE_H

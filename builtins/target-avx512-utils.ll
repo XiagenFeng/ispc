@@ -1,4 +1,4 @@
-;;  Copyright (c) 2015-2019, Intel Corporation
+;;  Copyright (c) 2015-2020, Intel Corporation
 ;;  All rights reserved.
 ;;
 ;;  Redistribution and use in source and binary forms, with or without
@@ -29,7 +29,7 @@
 ;;   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 ;;   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-define(`MASK',`i8')
+define(`MASK',`i1')
 define(`HAVE_GATHER',`1')
 define(`HAVE_SCATTER',`1')
 
@@ -39,6 +39,8 @@ stdlib_core()
 scans()
 reduce_equal(WIDTH)
 rdrand_definition()
+popcnt()
+ctlztz()
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; broadcast/rotate/shuffle
@@ -326,26 +328,6 @@ define float @__sqrt_uniform_float(float) nounwind readonly alwaysinline {
   sse_unary_scalar(ret, 4, float, @llvm.x86.sse.sqrt.ss, %0)
   ret float %ret
 }
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; bit ops
-
-declare i32 @llvm.ctpop.i32(i32) nounwind readnone
-
-define i32 @__popcnt_int32(i32) nounwind readonly alwaysinline {
-  %call = call i32 @llvm.ctpop.i32(i32 %0)
-  ret i32 %call
-}
-
-declare i64 @llvm.ctpop.i64(i64) nounwind readnone
-
-define i64 @__popcnt_int64(i64) nounwind readonly alwaysinline {
-  %call = call i64 @llvm.ctpop.i64(i64 %0)
-  ret i64 %call
-}
-ctlztz()
-
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; switch macro

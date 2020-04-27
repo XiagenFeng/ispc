@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2019, Intel Corporation
+  Copyright (c) 2010-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -37,8 +37,10 @@
 
 #include "ispc.h"
 #include "module.h"
+#include "target_registry.h"
 #include "type.h"
 #include "util.h"
+#include <cstdarg>
 #include <stdio.h>
 #include <stdlib.h>
 #ifdef ISPC_HOST_IS_WINDOWS
@@ -46,6 +48,7 @@
 #else
 #include <unistd.h>
 #endif // ISPC_HOST_IS_WINDOWS
+#include <llvm/Support/CommandLine.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/Signals.h>
 #include <llvm/Support/TargetRegistry.h>
@@ -64,16 +67,14 @@
 #endif
 #endif // ISPC_HOST_IS_WINDOWS
 
-#define MAX_NUM_ARGS (512)
-
 static void lPrintVersion() {
 #ifdef ISPC_HOST_IS_WINDOWS
-    printf("Intel(r) SPMD Program Compiler (ispc), %s (build date %s, LLVM %s)\n"
+    printf("Intel(r) Implicit SPMD Program Compiler (Intel(r) ISPC), %s (build date %s, LLVM %s)\n"
            "Supported Visual Studio versions: %s.\n",
            ISPC_VERSION, BUILD_DATE, ISPC_LLVM_VERSION_STRING, ISPC_VS_VERSION);
 #else
-    printf("Intel(r) SPMD Program Compiler (ispc), %s (build %s @ %s, LLVM %s)\n", ISPC_VERSION, BUILD_VERSION,
-           BUILD_DATE, ISPC_LLVM_VERSION_STRING);
+    printf("Intel(r) Implicit SPMD Program Compiler (Intel(r) ISPC), %s (build %s @ %s, LLVM %s)\n", ISPC_VERSION,
+           BUILD_VERSION, BUILD_DATE, ISPC_LLVM_VERSION_STRING);
 #endif
 
 // The recommended way to build ISPC assumes custom LLVM build with a set of patches.
@@ -86,13 +87,13 @@ static void lPrintVersion() {
 #endif
 }
 
-static void usage(int ret) {
+[[noreturn]] static void usage(int ret) {
     lPrintVersion();
     printf("\nusage: ispc\n");
     printf("    [--addressing={32,64}]\t\tSelect 32- or 64-bit addressing. (Note that 32-bit\n");
     printf("                          \t\taddressing calculations are done by default, even\n");
     printf("                          \t\ton 64-bit target architectures.)\n");
-    printf("    [--arch={%s}]\t\tSelect target architecture\n", Target::SupportedArchs());
+    printf("    [--arch={%s}]\t\tSelect target architecture\n", g->target_registry->getSupportedArchs().c_str());
     printf("    [--c++-include-file=<name>]\t\tSpecify name of file to emit in #include statement in generated C++ "
            "code.\n");
 #ifndef ISPC_HOST_IS_WINDOWS
@@ -106,19 +107,18 @@ static void usage(int ret) {
     printf("    [-D<foo>]\t\t\t\t#define given value when running preprocessor\n");
     printf("    [--dev-stub <filename>]\t\tEmit device-side offload stub functions to file\n");
     printf("    [--dllexport]\t\t\tMake non-static functions DLL exported.  Windows target only\n");
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_5
     printf("    [--dwarf-version={2,3,4}]\t\tGenerate source-level debug information with given DWARF version "
            "(triggers -g).  Ignored for Windows target\n");
-#endif
     printf("    [--emit-asm]\t\t\tGenerate assembly language file as output\n");
     printf("    [--x86-asm-syntax=<option>]\t\tSelect style of code if generating assembly\n");
     printf("        intel\t\t\t\tEmit Intel-style assembly\n");
     printf("        att\t\t\t\tEmit AT&T-style assembly\n");
     printf("    [--emit-c++]\t\t\tEmit a C++ source file as output\n");
-    printf("    [--emit-llvm]\t\t\tEmit LLVM bitode file as output\n");
-    printf("    [--emit-llvm-text]\t\t\tEmit LLVM bitode file as output in textual form\n");
+    printf("    [--emit-llvm]\t\t\tEmit LLVM bitcode file as output\n");
+    printf("    [--emit-llvm-text]\t\t\tEmit LLVM bitcode file as output in textual form\n");
     printf("    [--emit-obj]\t\t\tGenerate object file file as output (default)\n");
     printf("    [--force-alignment=<value>]\t\tForce alignment in memory allocations routine to be <value>\n");
+    printf("    [--error-limit=<value>]\t\tLimit maximum number of errors emitting by ISPC to <value>\n");
     printf("    [-g]\t\t\t\tGenerate source-level debug information\n");
     printf("    [--help]\t\t\t\tPrint help\n");
     printf("    [--help-dev]\t\t\tPrint help for developer options\n");
@@ -150,21 +150,26 @@ static void usage(int ret) {
     printf("        disable-assertions\t\tRemove assertion statements from final code.\n");
     printf("        disable-fma\t\t\tDisable 'fused multiply-add' instructions (on targets that support them)\n");
     printf("        disable-loop-unroll\t\tDisable loop unrolling.\n");
+#if ISPC_LLVM_VERSION >= ISPC_LLVM_8_0
+    printf("        disable-zmm\t\tDisable using zmm registers for avx512 targets in favour of ymm. This also affects "
+           "ABI.\n");
+#endif
     printf("        fast-masked-vload\t\tFaster masked vector loads on SSE (may go past end of array)\n");
     printf("        fast-math\t\t\tPerform non-IEEE-compliant optimizations of numeric expressions\n");
     printf("        force-aligned-memory\t\tAlways issue \"aligned\" vector load and store instructions\n");
     printf("    [--pic]\t\t\t\tGenerate position-independent code.  Ignored for Windows target\n");
     printf("    [--quiet]\t\t\t\tSuppress all output\n");
+    printf("    [--support-matrix]\t\t\tPrint full matrix of supported targets, architectures and OSes\n");
     printf("    ");
     char targetHelp[2048];
     snprintf(targetHelp, sizeof(targetHelp),
              "[--target=<t>]\t\t\tSelect target ISA and width.\n"
              "<t>={%s}",
-             Target::SupportedTargets());
+             g->target_registry->getSupportedTargets().c_str());
     PrintWithWordBreaks(targetHelp, 24, TerminalWidth(), stdout);
     printf("    ");
     snprintf(targetHelp, sizeof(targetHelp), "[--target-os=<os>]\t\t\tSelect target OS.  <os>={%s}",
-             Target::SupportedOSes());
+             g->target_registry->getSupportedOSes().c_str());
     PrintWithWordBreaks(targetHelp, 24, TerminalWidth(), stdout);
     printf("    [--version]\t\t\t\tPrint ispc version\n");
     printf("    [--werror]\t\t\t\tTreat warnings as errors\n");
@@ -175,7 +180,7 @@ static void usage(int ret) {
     exit(ret);
 }
 
-static void devUsage(int ret) {
+[[noreturn]] static void devUsage(int ret) {
     lPrintVersion();
     printf("\nusage (developer options): ispc\n");
     printf("    [--debug]\t\t\t\tPrint information useful for debugging ispc\n");
@@ -199,9 +204,6 @@ static void devUsage(int ret) {
     printf("    [--debug-phase=<value>]\t\tSet optimization phases to dump. "
            "--debug-phase=first,210:220,300,305,310:last\n");
     printf("    [--dump-file]\t\t\tDump module IR to file(s) in current directory\n");
-#endif
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_4 || ISPC_LLVM_VERSION == ISPC_LLVM_3_5 // 3.4, 3.5
-    printf("    [--debug-ir=<value>]\t\tSet optimization phase to generate debugIR after it\n");
 #endif
     printf("    [--off-phase=<value>]\t\tSwitch off optimization phases. --off-phase=first,210:220,300,305,310:last\n");
     exit(ret);
@@ -228,6 +230,8 @@ class ArgFactory {
     ArgFactory() {}
 
     char *GetNextArg() {
+        bool insideDQ = false;
+        bool insideSQ = false;
         std::string arg;
         char c = GetNextChar();
 
@@ -240,7 +244,17 @@ class ArgFactory {
             return NULL;
 
         // c now has the first character of the next argument, so collect the rest
-        while (c != '\0' && !isspace(c)) {
+        while (c != '\0' && !(isspace(c) && !insideDQ && !insideSQ)) {
+            if (c == '\"' && !insideSQ) {
+                c = GetNextChar();
+                insideDQ = !insideDQ;
+                continue;
+            }
+            if (c == '\'' && !insideDQ) {
+                c = GetNextChar();
+                insideSQ = !insideSQ;
+                continue;
+            }
             arg += c;
             c = GetNextChar();
         }
@@ -286,53 +300,48 @@ class StringArgFactory : public ArgFactory {
 };
 
 // Forward reference
-static void lAddSingleArg(char *arg, int &argc, char *argv[MAX_NUM_ARGS]);
+static void lAddSingleArg(char *arg, std::vector<char *> &argv);
 
-/** Add all args from a given factory to the argc/argv passed as parameters, which could
+/** Add all args from a given factory to the argv passed as parameters, which could
  *  include recursing into another ArgFactory.
  */
-static void lAddArgsFromFactory(ArgFactory &Args, int &argc, char *argv[MAX_NUM_ARGS]) {
+static void lAddArgsFromFactory(ArgFactory &Args, std::vector<char *> &argv) {
     while (true) {
         char *NextArg = Args.GetNextArg();
         if (NextArg == NULL)
             break;
-        lAddSingleArg(NextArg, argc, argv);
+        lAddSingleArg(NextArg, argv);
     }
 }
 
-/** Parse an open file for arguments and add them to the argc/argv passed as parameters */
-static void lAddArgsFromFile(FILE *file, int &argc, char *argv[MAX_NUM_ARGS]) {
+/** Parse an open file for arguments and add them to the argv passed as parameters */
+static void lAddArgsFromFile(FILE *file, std::vector<char *> &argv) {
     FileArgFactory args(file);
-    lAddArgsFromFactory(args, argc, argv);
+    lAddArgsFromFactory(args, argv);
 }
 
-/** Parse a string for arguments and add them to the argc/argv passed as parameters */
-static void lAddArgsFromString(const char *string, int &argc, char *argv[MAX_NUM_ARGS]) {
+/** Parse a string for arguments and add them to the argv passed as parameters */
+static void lAddArgsFromString(const char *string, std::vector<char *> &argv) {
     StringArgFactory args(string);
-    lAddArgsFromFactory(args, argc, argv);
+    lAddArgsFromFactory(args, argv);
 }
 
-/** Add a single argument to the argc/argv passed as parameters. If the argument is of the
+/** Add a single argument to the argv passed as parameters. If the argument is of the
  *  form @<filename> and <filename> exists and is readable, the arguments in the file will be
- *  inserted into argc/argv in place of the original argument.
+ *  inserted into argv in place of the original argument.
  */
-static void lAddSingleArg(char *arg, int &argc, char *argv[MAX_NUM_ARGS]) {
+static void lAddSingleArg(char *arg, std::vector<char *> &argv) {
     if (arg[0] == '@') {
         char *filename = &arg[1];
         FILE *file = fopen(filename, "r");
         if (file != NULL) {
-            lAddArgsFromFile(file, argc, argv);
+            lAddArgsFromFile(file, argv);
             fclose(file);
             arg = NULL;
         }
     }
     if (arg != NULL) {
-        if (argc >= MAX_NUM_ARGS) {
-            fprintf(stderr, "More than %d arguments have been specified - aborting\n", MAX_NUM_ARGS);
-            exit(EXIT_FAILURE);
-        }
-        // printf("Arg %d: %s\n", argc, arg);
-        argv[argc++] = arg;
+        argv.push_back(arg);
     }
 }
 
@@ -341,22 +350,69 @@ static void lAddSingleArg(char *arg, int &argc, char *argv[MAX_NUM_ARGS]) {
  *  additional arguments using @<filename>. This function returns a new set of
  *  arguments representing the ones from all these sources merged together.
  */
-static void lGetAllArgs(int Argc, char *Argv[], int &argc, char *argv[MAX_NUM_ARGS]) {
-    argc = 0;
-
+static void lGetAllArgs(int Argc, char *Argv[], std::vector<char *> &argv) {
     // Copy over the command line arguments (passed in)
     for (int i = 0; i < Argc; ++i)
-        lAddSingleArg(Argv[i], argc, argv);
+        lAddSingleArg(Argv[i], argv);
 
     // See if we have any set via the environment variable
     const char *env = getenv("ISPC_ARGS");
     if (env)
-        lAddArgsFromString(env, argc, argv);
+        lAddArgsFromString(env, argv);
 }
 
 static void lSignal(void *) { FATAL("Unhandled signal sent to process; terminating."); }
 
-static int ParsingPhaseName(char *stage) {
+// ArgErrors accumulates error and warning messages during arguments parsing
+// prints them after the parsing is done. We need to delay printing to take
+// into account such options as --quite, --nowrap --werror, which affects how
+// errors and warnings are treated and printed.
+class ArgErrors {
+    enum class MsgType { warning, error };
+    std::vector<std::pair<MsgType, std::string>> m_messages;
+    void AddMessage(MsgType msg_type, const char *format, va_list args) {
+        char *messageBuf;
+        if (vasprintf(&messageBuf, format, args) == -1) {
+            fprintf(stderr, "vasprintf() unable to allocate memory!\n");
+            exit(-1);
+        }
+
+        m_messages.push_back(std::make_pair(msg_type, messageBuf));
+
+        free(messageBuf);
+    }
+
+  public:
+    ArgErrors(){};
+    void AddError(const char *format, ...) PRINTF_FUNC {
+        va_list args;
+        va_start(args, format);
+        AddMessage(MsgType::error, format, args);
+        va_end(args);
+    }
+    void AddWarning(const char *format, ...) PRINTF_FUNC {
+        va_list args;
+        va_start(args, format);
+        AddMessage(MsgType::warning, format, args);
+        va_end(args);
+    }
+    void Emit() {
+        bool errors = false;
+        for (auto &message : m_messages) {
+            if (message.first == MsgType::error || g->warningsAsErrors) {
+                errors = true;
+                Error(SourcePos(), "%s", message.second.c_str());
+            } else {
+                Warning(SourcePos(), "%s", message.second.c_str());
+            }
+        }
+        if (errors) {
+            exit(-1);
+        }
+    }
+};
+
+static int ParsingPhaseName(char *stage, ArgErrors &errorHandler) {
     if (strncmp(stage, "first", 5) == 0) {
         return 0;
     } else if (strncmp(stage, "last", 4) == 0) {
@@ -364,19 +420,27 @@ static int ParsingPhaseName(char *stage) {
     } else {
         int t = atoi(stage);
         if (t < 0 || t > LAST_OPT_NUMBER) {
-            fprintf(stderr, "Phases must be from 0 to %d. %s is incorrect.\n", LAST_OPT_NUMBER, stage);
-            exit(0);
+            errorHandler.AddError("Phases must be from 0 to %d. %s is incorrect.", LAST_OPT_NUMBER, stage);
+            return 0;
         } else {
             return t;
         }
     }
 }
 
-static std::set<int> ParsingPhases(char *stages) {
+static std::set<int> ParsingPhases(char *stages, ArgErrors &errorHandler) {
+    constexpr int parsing_limit = 100;
     std::set<int> phases;
-    auto len = strnlen(stages, 100);
-    Assert(len && len < 100 && "phases string is too long!");
-    int begin = ParsingPhaseName(stages);
+    auto len = strnlen(stages, parsing_limit);
+    if (len == 0) {
+        errorHandler.AddError("Empty phase list.");
+        return phases;
+    }
+    if (len == parsing_limit && stages[parsing_limit] != '\0') {
+        errorHandler.AddError("Phase list is too long.");
+        return phases;
+    }
+    int begin = ParsingPhaseName(stages, errorHandler);
     int end = begin;
 
     for (unsigned i = 0; i < strlen(stages); i++) {
@@ -384,10 +448,10 @@ static std::set<int> ParsingPhases(char *stages) {
             for (int j = begin; j < end + 1; j++) {
                 phases.insert(j);
             }
-            begin = ParsingPhaseName(stages + i + 1);
+            begin = ParsingPhaseName(stages + i + 1, errorHandler);
             end = begin;
         } else if (stages[i] == ':') {
-            end = ParsingPhaseName(stages + i + 1);
+            end = ParsingPhaseName(stages + i + 1, errorHandler);
         }
     }
     return phases;
@@ -416,9 +480,9 @@ static void lParseInclude(const char *path) {
 }
 
 int main(int Argc, char *Argv[]) {
-    int argc;
-    char *argv[MAX_NUM_ARGS];
-    lGetAllArgs(Argc, Argv, argc, argv);
+    std::vector<char *> argv;
+    lGetAllArgs(Argc, Argv, argv);
+    int argc = argv.size();
 
     llvm::sys::AddSignalHandler(lSignal, NULL);
 
@@ -453,12 +517,14 @@ int main(int Argc, char *Argv[]) {
     LLVMInitializeAArch64TargetMC();
 #endif
 
-#ifdef ISPC_NVPTX_ENABLED
-    LLVMInitializeNVPTXTargetInfo();
-    LLVMInitializeNVPTXTarget();
-    LLVMInitializeNVPTXAsmPrinter();
-    LLVMInitializeNVPTXTargetMC();
-#endif /* ISPC_NVPTX_ENABLED */
+#ifdef ISPC_WASM_ENABLED
+    LLVMInitializeWebAssemblyAsmParser();
+    LLVMInitializeWebAssemblyAsmPrinter();
+    LLVMInitializeWebAssemblyDisassembler();
+    LLVMInitializeWebAssemblyTarget();
+    LLVMInitializeWebAssemblyTargetInfo();
+    LLVMInitializeWebAssemblyTargetMC();
+#endif
 
     char *file = NULL;
     const char *headerFileName = NULL;
@@ -474,87 +540,80 @@ int main(int Argc, char *Argv[]) {
 
     Module::OutputType ot = Module::Object;
     Module::OutputFlags flags = Module::NoFlags;
-    const char *arch = NULL, *cpu = NULL, *target = NULL, *intelAsmSyntax = NULL;
+    Arch arch = Arch::none;
+    std::vector<ISPCTarget> targets;
+    const char *cpu = NULL, *intelAsmSyntax = NULL;
 
-    // Default settings for PS4
-    if (g->target_os == TargetOS::OS_PS4) {
-        flags |= Module::GeneratePIC;
-        cpu = "btver2";
-    }
+    ArgErrors errorHandler;
+
     for (int i = 1; i < argc; ++i) {
-        if (!strcmp(argv[i], "--help"))
+        if (!strcmp(argv[i], "--help")) {
             usage(0);
-        if (!strcmp(argv[i], "--help-dev"))
+        } else if (!strcmp(argv[i], "--help-dev")) {
             devUsage(0);
-        else if (!strncmp(argv[i], "-D", 2))
+        } else if (!strcmp(argv[i], "--support-matrix")) {
+            g->target_registry->printSupportMatrix();
+            exit(0);
+        } else if (!strncmp(argv[i], "-D", 2)) {
             g->cppArgs.push_back(argv[i]);
-        else if (!strncmp(argv[i], "--addressing=", 13)) {
+        } else if (!strncmp(argv[i], "--addressing=", 13)) {
             if (atoi(argv[i] + 13) == 64)
                 // FIXME: this doesn't make sense on 32 bit platform.
                 g->opt.force32BitAddressing = false;
             else if (atoi(argv[i] + 13) == 32)
                 g->opt.force32BitAddressing = true;
             else {
-                fprintf(stderr,
-                        "Addressing width \"%s\" invalid--only 32 and "
-                        "64 are allowed.\n",
-                        argv[i] + 13);
-                usage(1);
+                errorHandler.AddError("Addressing width \"%s\" invalid -- only 32 and "
+                                      "64 are allowed.",
+                                      argv[i] + 13);
             }
         } else if (!strncmp(argv[i], "--arch=", 7)) {
-            // Do not allow to set arch for PS4 target, it is pre-defined.
-            if (g->target_os != TargetOS::OS_PS4) {
-                arch = argv[i] + 7;
-                // Define arch alias
-                // LLVM TargetRegistry uses "x86-64", while triple uses "x86_64".
-                // We support both as input and internally keep it as "x86-64".
-                if (std::string(arch) == "x86_64") {
-                    arch = "x86-64";
-                }
+            Arch prev_arch = arch;
+
+            arch = ParseArch(argv[i] + 7);
+            if (arch == Arch::error) {
+                errorHandler.AddError("Unsupported value for --arch, supported values are: %s",
+                                      g->target_registry->getSupportedArchs().c_str());
+            }
+
+            if (prev_arch != Arch::none && prev_arch != arch) {
+                std::string prev_arch_str = ArchToString(prev_arch);
+                std::string arch_str = ArchToString(arch);
+                errorHandler.AddWarning("Overwriting --arch=%s with --arch=%s", prev_arch_str.c_str(),
+                                        arch_str.c_str());
             }
         } else if (!strncmp(argv[i], "--x86-asm-syntax=", 17)) {
             intelAsmSyntax = argv[i] + 17;
             if (!((std::string(intelAsmSyntax) == "intel") || (std::string(intelAsmSyntax) == "att"))) {
                 intelAsmSyntax = NULL;
-                fprintf(stderr,
-                        "Invalid value for --x86-asm-syntax: \"%s\" -- "
-                        "only intel and att are allowed.\n",
-                        argv[i] + 17);
+                errorHandler.AddError("Invalid value for --x86-asm-syntax: \"%s\" -- "
+                                      "only intel and att are allowed.",
+                                      argv[i] + 17);
             }
         } else if (!strncmp(argv[i], "--cpu=", 6)) {
-            // Do not allow to set cpu for PS4 target, it is pre-defined.
-            if (g->target_os != TargetOS::OS_PS4) {
-                cpu = argv[i] + 6;
-            }
+            cpu = argv[i] + 6;
         } else if (!strcmp(argv[i], "--fast-math")) {
-            fprintf(stderr, "--fast-math option has been renamed to --opt=fast-math!\n");
-            usage(1);
+            errorHandler.AddError("--fast-math option has been renamed to --opt=fast-math!");
         } else if (!strcmp(argv[i], "--fast-masked-vload")) {
-            fprintf(stderr, "--fast-masked-vload option has been renamed to "
-                            "--opt=fast-masked-vload!\n");
-            usage(1);
+            errorHandler.AddError("--fast-masked-vload option has been renamed to "
+                                  "--opt=fast-masked-vload!");
         } else if (!strcmp(argv[i], "--debug"))
             g->debugPrint = true;
         else if (!strcmp(argv[i], "--debug-llvm"))
             llvm::DebugFlag = true;
         else if (!strcmp(argv[i], "--dllexport"))
             g->dllExport = true;
-#if ISPC_LLVM_VERSION >= ISPC_LLVM_3_5
         else if (!strncmp(argv[i], "--dwarf-version=", 16)) {
             int val = atoi(argv[i] + 16);
             if (2 <= val && val <= 4) {
                 g->generateDebuggingSymbols = true;
                 g->generateDWARFVersion = val;
             } else {
-                fprintf(stderr,
-                        "Invalid value for DWARF version: \"%s\" -- "
-                        "only 2, 3 and 4 are allowed.\n",
-                        argv[i] + 16);
-                usage(1);
+                errorHandler.AddError("Invalid value for DWARF version: \"%s\" -- "
+                                      "only 2, 3 and 4 are allowed.",
+                                      argv[i] + 16);
             }
-        }
-#endif
-        else if (!strcmp(argv[i], "--print-target"))
+        } else if (!strcmp(argv[i], "--print-target"))
             g->printTarget = true;
         else if (!strcmp(argv[i], "--no-omit-frame-pointer"))
             g->NoOmitFramePointer = true;
@@ -575,11 +634,11 @@ int main(int Argc, char *Argv[]) {
         else if (!strcmp(argv[i], "--emit-obj"))
             ot = Module::Object;
         else if (!strcmp(argv[i], "-I")) {
-            if (++i == argc) {
-                fprintf(stderr, "No path specified after -I option.\n");
-                usage(1);
+            if (++i != argc) {
+                lParseInclude(argv[i]);
+            } else {
+                errorHandler.AddError("No path specified after -I option.");
             }
-            lParseInclude(argv[i]);
         } else if (!strncmp(argv[i], "-I", 2))
             lParseInclude(argv[i] + 2);
         else if (!strcmp(argv[i], "--fuzz-test"))
@@ -588,19 +647,28 @@ int main(int Argc, char *Argv[]) {
             g->fuzzTestSeed = atoi(argv[i] + 12);
         else if (!strcmp(argv[i], "--target")) {
             // FIXME: should remove this way of specifying the target...
-            if (++i == argc) {
-                fprintf(stderr, "No target specified after --target option.\n");
-                usage(1);
+            if (++i != argc) {
+                auto result = ParseISPCTargets(argv[i]);
+                targets = result.first;
+                if (!result.second.empty()) {
+                    errorHandler.AddError("Incorrect targets: %s.  Choices are: %s.", result.second.c_str(),
+                                          g->target_registry->getSupportedTargets().c_str());
+                }
+            } else {
+                errorHandler.AddError("No target specified after --target option.");
             }
-            target = argv[i];
         } else if (!strncmp(argv[i], "--target=", 9)) {
-            target = argv[i] + 9;
+            auto result = ParseISPCTargets(argv[i] + 9);
+            targets = result.first;
+            if (!result.second.empty()) {
+                errorHandler.AddError("Incorrect targets: %s.  Choices are: %s.", result.second.c_str(),
+                                      g->target_registry->getSupportedTargets().c_str());
+            }
         } else if (!strncmp(argv[i], "--target-os=", 12)) {
-            g->target_os = StringToOS(argv[i] + 12);
-            if (g->target_os == OS_ERROR) {
-                fprintf(stderr, "Unsupported value for --target-os, supported values are: %s\n",
-                        Target::SupportedOSes());
-                usage(1);
+            g->target_os = ParseOS(argv[i] + 12);
+            if (g->target_os == TargetOS::error) {
+                errorHandler.AddError("Unsupported value for --target-os, supported values are: %s",
+                                      g->target_registry->getSupportedOSes().c_str());
             }
         } else if (!strncmp(argv[i], "--math-lib=", 11)) {
             const char *lib = argv[i] + 11;
@@ -613,8 +681,7 @@ int main(int Argc, char *Argv[]) {
             else if (!strcmp(lib, "system"))
                 g->mathLib = Globals::Math_System;
             else {
-                fprintf(stderr, "Unknown --math-lib= option \"%s\".\n", lib);
-                usage(1);
+                errorHandler.AddError("Unknown --math-lib= option \"%s\".", lib);
             }
         } else if (!strncmp(argv[i], "--opt=", 6)) {
             const char *opt = argv[i] + 6;
@@ -628,6 +695,10 @@ int main(int Argc, char *Argv[]) {
                 g->opt.unrollLoops = false;
             else if (!strcmp(opt, "disable-fma"))
                 g->opt.disableFMA = true;
+#if ISPC_LLVM_VERSION >= ISPC_LLVM_8_0
+            else if (!strcmp(opt, "disable-zmm"))
+                g->opt.disableZMM = true;
+#endif
             else if (!strcmp(opt, "force-aligned-memory"))
                 g->opt.forceAlignedMemory = true;
 
@@ -654,8 +725,7 @@ int main(int Argc, char *Argv[]) {
             else if (!strcmp(opt, "disable-uniform-memory-optimizations"))
                 g->opt.disableUniformMemoryOptimizations = true;
             else {
-                fprintf(stderr, "Unknown --opt= option \"%s\".\n", opt);
-                usage(1);
+                errorHandler.AddError("Unknown --opt= option \"%s\".", opt);
             }
         } else if (!strncmp(argv[i], "--force-alignment=", 18)) {
             g->forceAlignment = atoi(argv[i] + 18);
@@ -664,24 +734,32 @@ int main(int Argc, char *Argv[]) {
             g->emitPerfWarnings = false;
         } else if (!strcmp(argv[i], "--werror"))
             g->warningsAsErrors = true;
-        else if (!strcmp(argv[i], "--nowrap"))
+        else if (!strncmp(argv[i], "--error-limit=", 14)) {
+            int errLimit = atoi(argv[i] + 14);
+            if (errLimit >= 0)
+                g->errorLimit = errLimit;
+            else
+                errorHandler.AddError("Invalid value for --error-limit: \"%d\" -- "
+                                      "value cannot be a negative number.",
+                                      errLimit);
+        } else if (!strcmp(argv[i], "--nowrap"))
             g->disableLineWrap = true;
         else if (!strcmp(argv[i], "--wno-perf") || !strcmp(argv[i], "-wno-perf"))
             g->emitPerfWarnings = false;
         else if (!strcmp(argv[i], "-o")) {
-            if (++i == argc) {
-                fprintf(stderr, "No output file specified after -o option.\n");
-                usage(1);
+            if (++i != argc) {
+                outFileName = argv[i];
+            } else {
+                errorHandler.AddError("No output file specified after -o option.");
             }
-            outFileName = argv[i];
         } else if (!strncmp(argv[i], "--outfile=", 10))
             outFileName = argv[i] + strlen("--outfile=");
         else if (!strcmp(argv[i], "-h")) {
-            if (++i == argc) {
-                fprintf(stderr, "No header file name specified after -h option.\n");
-                usage(1);
+            if (++i != argc) {
+                headerFileName = argv[i];
+            } else {
+                errorHandler.AddError("No header file name specified after -h option.");
             }
-            headerFileName = argv[i];
         } else if (!strncmp(argv[i], "--header-outfile=", 17)) {
             headerFileName = argv[i] + strlen("--header-outfile=");
         } else if (!strncmp(argv[i], "--c++-include-file=", 19)) {
@@ -695,9 +773,9 @@ int main(int Argc, char *Argv[]) {
             g->codegenOptLevel = Globals::CodegenOptLevel::Aggressive;
             if (!strcmp(argv[i], "-O1"))
                 g->opt.disableCoherentControlFlow = true;
-        } else if (!strcmp(argv[i], "-"))
-            ;
-        else if (!strcmp(argv[i], "--nostdlib"))
+        } else if (!strcmp(argv[i], "-")) {
+            file = argv[i];
+        } else if (!strcmp(argv[i], "--nostdlib"))
             g->includeStdlib = false;
         else if (!strcmp(argv[i], "--nocpp"))
             g->runCPP = false;
@@ -713,73 +791,109 @@ int main(int Argc, char *Argv[]) {
             extern int yydebug;
             yydebug = 1;
         } else if (!strcmp(argv[i], "-MMM")) {
-            if (++i == argc) {
-                fprintf(stderr, "No output file name specified after -MMM option.\n");
-                usage(1);
+            if (++i != argc) {
+                depsFileName = argv[i];
+                flags |= Module::GenerateFlatDeps;
+            } else {
+                errorHandler.AddError("No output file name specified after -MMM option.");
             }
-            depsFileName = argv[i];
-            flags |= Module::GenerateFlatDeps;
         } else if (!strcmp(argv[i], "-M")) {
             flags |= Module::GenerateMakeRuleForDeps | Module::OutputDepsToStdout;
         } else if (!strcmp(argv[i], "-MF")) {
             depsFileName = nullptr;
-            if (++i == argc) {
-                fprintf(stderr, "No output file name specified after -MF option.\n");
-                usage(1);
+            if (++i != argc) {
+                depsFileName = argv[i];
+            } else {
+                errorHandler.AddError("No output file name specified after -MF option.");
             }
-            depsFileName = argv[i];
         } else if (!strcmp(argv[i], "-MT")) {
             depsTargetName = nullptr;
-            if (++i == argc) {
-                fprintf(stderr, "No target name specified after -MT option.\n");
-                usage(1);
+            if (++i != argc) {
+                depsTargetName = argv[i];
+            } else {
+                errorHandler.AddError("No target name specified after -MT option.");
             }
-            depsTargetName = argv[i];
         } else if (!strcmp(argv[i], "--dev-stub")) {
-            if (++i == argc) {
-                fprintf(stderr, "No output file name specified after --dev-stub option.\n");
-                usage(1);
+            if (++i != argc) {
+                devStubFileName = argv[i];
+            } else {
+                errorHandler.AddError("No output file name specified after --dev-stub option.");
             }
-            devStubFileName = argv[i];
         } else if (!strcmp(argv[i], "--host-stub")) {
-            if (++i == argc) {
-                fprintf(stderr, "No output file name specified after --host-stub option.\n");
-                usage(1);
+            if (++i != argc) {
+                hostStubFileName = argv[i];
+            } else {
+                errorHandler.AddError("No output file name specified after --host-stub option.");
             }
-            hostStubFileName = argv[i];
         }
 #ifndef ISPC_NO_DUMPS
         else if (strncmp(argv[i], "--debug-phase=", 14) == 0) {
-            fprintf(stderr, "WARNING: Adding debug phases may change the way PassManager"
-                            "handles the phases and it may possibly make some bugs go"
-                            "away or introduce the new ones.\n");
-            g->debug_stages = ParsingPhases(argv[i] + strlen("--debug-phase="));
+            errorHandler.AddWarning("Adding debug phases may change the way PassManager"
+                                    "handles the phases and it may possibly make some bugs go"
+                                    "away or introduce the new ones.");
+            g->debug_stages = ParsingPhases(argv[i] + strlen("--debug-phase="), errorHandler);
         } else if (strncmp(argv[i], "--dump-file", 11) == 0)
             g->dumpFile = true;
 #endif
 
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_4 || ISPC_LLVM_VERSION == ISPC_LLVM_3_5 // 3.4, 3.5
-        else if (strncmp(argv[i], "--debug-ir=", 11) == 0) {
-            g->debugIR = ParsingPhaseName(argv[i] + strlen("--debug-ir="));
-        }
-#endif
         else if (strncmp(argv[i], "--off-phase=", 12) == 0) {
-            g->off_stages = ParsingPhases(argv[i] + strlen("--off-phase="));
+            g->off_stages = ParsingPhases(argv[i] + strlen("--off-phase="), errorHandler);
         } else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--version")) {
             lPrintVersion();
             return 0;
         } else if (argv[i][0] == '-') {
-            fprintf(stderr, "Unknown option \"%s\".\n", argv[i]);
-            usage(1);
+            errorHandler.AddError("Unknown option \"%s\".", argv[i]);
         } else {
             if (file != NULL) {
-                fprintf(stderr,
-                        "Multiple input files specified on command "
-                        "line: \"%s\" and \"%s\".\n",
-                        file, argv[i]);
-                usage(1);
-            } else
+                errorHandler.AddError("Multiple input files specified on command "
+                                      "line: \"%s\" and \"%s\".",
+                                      file, argv[i]);
+            } else {
                 file = argv[i];
+            }
+        }
+    }
+
+    // Emit accumulted errors and warnings, if any.
+    // All the rest of errors and warnigns will be processed in regullar way.
+    errorHandler.Emit();
+
+    if (file == NULL) {
+        Error(SourcePos(), "No input file were specified. To read text from stdin use \"-\" as file name.");
+        exit(1);
+    }
+
+    // Default settings for PS4
+    if (g->target_os == TargetOS::ps4) {
+        flags |= Module::GeneratePIC;
+        if (!cpu) {
+            // Default is btver2, but do not enforce it.
+            cpu = "btver2";
+        }
+        /*
+        if (cpu && std::string(cpu) != "btver2" && std::string(cpu) != "ps4") {
+            Warning(SourcePos(), "--cpu switch is ignored for PS4 target OS. btver2 (ps4) cpu is used.");
+        }
+        */
+        if (arch != Arch::x86_64) {
+            Warning(SourcePos(), "--arch switch is ignored for PS4 target OS. x86-64 arch is used.");
+            arch = Arch::x86_64;
+        }
+    }
+
+    // Default setting for "custom_linux"
+    if (g->target_os == TargetOS::custom_linux) {
+        flags |= Module::GeneratePIC;
+        if (!cpu) {
+            cpu = "cortex-a57";
+        }
+        if (targets.empty()) {
+            targets.push_back(ISPCTarget::neon_i32x4);
+            std::string target_string = ISPCTargetToString(targets[0]);
+            Warning(SourcePos(),
+                    "No --target specified on command-line."
+                    " Using \"%s\".",
+                    target_string.c_str());
         }
     }
 
@@ -819,18 +933,22 @@ int main(int Argc, char *Argv[]) {
 
     if (outFileName == NULL && headerFileName == NULL &&
         (depsFileName == NULL && 0 == (flags & Module::OutputDepsToStdout)) && hostStubFileName == NULL &&
-        devStubFileName == NULL)
+        devStubFileName == NULL) {
         Warning(SourcePos(), "No output file or header file name specified. "
                              "Program will be compiled and warnings/errors will "
                              "be issued, but no output will be generated.");
+    }
 
-    if (g->target_os == OS_WINDOWS && (flags & Module::GeneratePIC) != 0) {
+    if (g->target_os == TargetOS::windows && (flags & Module::GeneratePIC) != 0) {
         Warning(SourcePos(), "--pic switch for Windows target will be ignored.");
     }
 
-    if (g->target_os != OS_WINDOWS && g->dllExport) {
+    if (g->target_os != TargetOS::windows && g->dllExport) {
         Warning(SourcePos(), "--dllexport switch will be ignored, as the target OS is not Windows.");
     }
+
+    if (targets.size() > 1)
+        g->isMultiTargetCompilation = true;
 
     if ((ot == Module::Asm) && (intelAsmSyntax != NULL)) {
         std::vector<const char *> Args(3);
@@ -843,6 +961,14 @@ int main(int Argc, char *Argv[]) {
         llvm::cl::ParseCommandLineOptions(2, Args.data());
     }
 
-    return Module::CompileAndOutput(file, arch, cpu, target, flags, ot, outFileName, headerFileName, includeFileName,
+    for (auto target : targets) {
+        if (target == ISPCTarget::wasm_i32x4) {
+            Assert(targets.size() == 1 && "wasm32 supports only one target: i32x4");
+            arch = Arch::wasm32;
+            g->target_os = TargetOS::web;
+        }
+    }
+
+    return Module::CompileAndOutput(file, arch, cpu, targets, flags, ot, outFileName, headerFileName, includeFileName,
                                     depsFileName, depsTargetName, hostStubFileName, devStubFileName);
 }

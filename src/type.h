@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2010-2013, Intel Corporation
+  Copyright (c) 2010-2020, Intel Corporation
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -35,19 +35,14 @@
     @brief File with declarations for classes related to type representation
 */
 
-#ifndef ISPC_TYPE_H
-#define ISPC_TYPE_H 1
+#pragma once
 
 #include "ispc.h"
 #include "util.h"
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-#include <llvm/DerivedTypes.h>
-#include <llvm/Type.h>
-#else // >= 3.3
+
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Type.h>
-#endif
-#include <llvm/ADT/SmallVector.h>
 
 class ConstExpr;
 class StructType;
@@ -207,18 +202,15 @@ class Type {
         syntax. */
     virtual std::string GetCDeclaration(const std::string &name) const = 0;
 
-    /** Returns the LLVM type corresponding to this ispc type */
+    /** Returns the LLVM type corresponding to this ispc type. */
     virtual llvm::Type *LLVMType(llvm::LLVMContext *ctx) const = 0;
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    /** Returns the DIType (LLVM's debugging information structure),
-        corresponding to this type. */
-    virtual llvm::DIType GetDIType(llvm::DIDescriptor scope) const = 0;
-#else
+    /** Returns the LLVM storage type corresponding to this ispc type. */
+    virtual llvm::Type *LLVMStorageType(llvm::LLVMContext *ctx) const;
+
     /** Returns the DIType (LLVM's debugging information structure),
         corresponding to this type. */
     virtual llvm::DIType *GetDIType(llvm::DIScope *scope) const = 0;
-#endif
 
     /** Checks two types for equality.  Returns true if they are exactly
         the same, false otherwise. */
@@ -302,12 +294,10 @@ class AtomicType : public Type {
     std::string Mangle() const;
     std::string GetCDeclaration(const std::string &name) const;
 
+    llvm::Type *LLVMStorageType(llvm::LLVMContext *ctx) const;
     llvm::Type *LLVMType(llvm::LLVMContext *ctx) const;
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIType GetDIType(llvm::DIDescriptor scope) const;
-#else // LLVM 3.7++
+
     llvm::DIType *GetDIType(llvm::DIScope *scope) const;
-#endif
 
     /** This enumerator records the basic types that AtomicTypes can be
         built from.  */
@@ -351,6 +341,8 @@ class AtomicType : public Type {
 };
 
 /** @brief Type implementation for enumerated types
+ *
+ *  Note that ISPC enum assumes 32 bit int as underlying type.
  */
 class EnumType : public Type {
   public:
@@ -385,11 +377,8 @@ class EnumType : public Type {
     const std::string &GetEnumName() const { return name; }
 
     llvm::Type *LLVMType(llvm::LLVMContext *ctx) const;
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIType GetDIType(llvm::DIDescriptor scope) const;
-#else // LLVM 3.7++
+
     llvm::DIType *GetDIType(llvm::DIScope *scope) const;
-#endif
 
     /** Provides the enumerators defined in the enum definition. */
     void SetEnumerators(const std::vector<Symbol *> &enumerators);
@@ -468,11 +457,8 @@ class PointerType : public Type {
     std::string GetCDeclaration(const std::string &name) const;
 
     llvm::Type *LLVMType(llvm::LLVMContext *ctx) const;
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIType GetDIType(llvm::DIDescriptor scope) const;
-#else // LLVM 3.7++
+
     llvm::DIType *GetDIType(llvm::DIScope *scope) const;
-#endif
 
     static PointerType *Void;
 
@@ -571,11 +557,7 @@ class ArrayType : public SequentialType {
     std::string Mangle() const;
     std::string GetCDeclaration(const std::string &name) const;
 
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIType GetDIType(llvm::DIDescriptor scope) const;
-#else // LLVM 3.7++
     llvm::DIType *GetDIType(llvm::DIScope *scope) const;
-#endif
     llvm::ArrayType *LLVMType(llvm::LLVMContext *ctx) const;
 
     /** This method returns the total number of elements in the array,
@@ -642,12 +624,10 @@ class VectorType : public SequentialType {
     std::string Mangle() const;
     std::string GetCDeclaration(const std::string &name) const;
 
+    llvm::Type *LLVMStorageType(llvm::LLVMContext *ctx) const;
     llvm::Type *LLVMType(llvm::LLVMContext *ctx) const;
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIType GetDIType(llvm::DIDescriptor scope) const;
-#else // LLVM 3.7++
+
     llvm::DIType *GetDIType(llvm::DIScope *scope) const;
-#endif
 
     int GetElementCount() const;
     const AtomicType *GetElementType() const;
@@ -697,11 +677,8 @@ class StructType : public CollectionType {
     std::string GetCDeclaration(const std::string &name) const;
 
     llvm::Type *LLVMType(llvm::LLVMContext *ctx) const;
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIType GetDIType(llvm::DIDescriptor scope) const;
-#else // LLVM 3.7++
+
     llvm::DIType *GetDIType(llvm::DIScope *scope) const;
-#endif
 
     /** Returns the type of the structure element with the given name (if any).
         Returns NULL if there is no such named element. */
@@ -787,11 +764,8 @@ class UndefinedStructType : public Type {
     std::string GetCDeclaration(const std::string &name) const;
 
     llvm::Type *LLVMType(llvm::LLVMContext *ctx) const;
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIType GetDIType(llvm::DIDescriptor scope) const;
-#else // LLVM 3.7++
+
     llvm::DIType *GetDIType(llvm::DIScope *scope) const;
-#endif
 
     /** Returns the name of the structure type.  (e.g. struct Foo -> "Foo".) */
     const std::string &GetStructName() const { return name; }
@@ -833,11 +807,8 @@ class ReferenceType : public Type {
     std::string GetCDeclaration(const std::string &name) const;
 
     llvm::Type *LLVMType(llvm::LLVMContext *ctx) const;
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIType GetDIType(llvm::DIDescriptor scope) const;
-#else // LLVM 3.7++
+
     llvm::DIType *GetDIType(llvm::DIScope *scope) const;
-#endif
 
   private:
     const Type *const targetType;
@@ -887,11 +858,8 @@ class FunctionType : public Type {
     std::string GetCDeclarationForDispatch(const std::string &fname) const;
 
     llvm::Type *LLVMType(llvm::LLVMContext *ctx) const;
-#if ISPC_LLVM_VERSION <= ISPC_LLVM_3_6
-    llvm::DIType GetDIType(llvm::DIDescriptor scope) const;
-#else // LLVM 3.7++
+
     llvm::DIType *GetDIType(llvm::DIScope *scope) const;
-#endif
 
     const Type *GetReturnType() const { return returnType; }
 
@@ -1042,5 +1010,3 @@ template <> inline const FunctionType *CastType(const Type *type) {
 }
 
 inline bool IsReferenceType(const Type *t) { return CastType<ReferenceType>(t) != NULL; }
-
-#endif // ISPC_TYPE_H

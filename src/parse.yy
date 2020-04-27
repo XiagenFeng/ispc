@@ -37,7 +37,7 @@
 /* one for 'if', one for 'cif' */
 %expect 2
 
-%error-verbose
+%define parse.error verbose
 
 %code requires {
 
@@ -83,11 +83,7 @@ struct ForeachDimension;
 #include "util.h"
 
 #include <stdio.h>
-#if ISPC_LLVM_VERSION == ISPC_LLVM_3_2
-  #include <llvm/Constants.h>
-#else
-  #include <llvm/IR/Constants.h>
-#endif
+#include <llvm/IR/Constants.h>
 
 #define UNIMPLEMENTED \
         Error(yylloc, "Unimplemented parser functionality %s:%d", \
@@ -199,6 +195,7 @@ struct ForeachDimension {
 %token TOKEN_UNIFORM TOKEN_VARYING TOKEN_TYPEDEF TOKEN_SOA TOKEN_UNMASKED
 %token TOKEN_CHAR TOKEN_INT TOKEN_SIGNED TOKEN_UNSIGNED TOKEN_FLOAT TOKEN_DOUBLE
 %token TOKEN_INT8 TOKEN_INT16 TOKEN_INT64 TOKEN_CONST TOKEN_VOID TOKEN_BOOL
+%token TOKEN_UINT8 TOKEN_UINT16 TOKEN_UINT TOKEN_UINT64
 %token TOKEN_ENUM TOKEN_STRUCT TOKEN_TRUE TOKEN_FALSE
 
 %token TOKEN_CASE TOKEN_DEFAULT TOKEN_IF TOKEN_ELSE TOKEN_SWITCH
@@ -849,8 +846,16 @@ declaration_specifiers
       {
           DeclSpecs *ds = (DeclSpecs *)$2;
           if (ds != NULL) {
-              if (ds->baseType != NULL)
-                  Error(@1, "Multiple types provided for declaration.");
+              if (ds->baseType != NULL) {
+                  if( ds->baseType->IsUnsignedType()) {
+                      Error(@1, "Redefining uint8/uint16/uint32/uint64 type "
+                      "which is part of ISPC language since version 1.13. "
+                      "Remove this typedef or use ISPC_UINT_IS_DEFINED to "
+                      "detect that these types are defined.");
+                  }
+                  else
+                      Error(@1, "Multiple types provided for declaration.");
+              }
               ds->baseType = $1;
           }
           $$ = ds;
@@ -943,11 +948,15 @@ atomic_var_type_specifier
     : TOKEN_VOID { $$ = AtomicType::Void; }
     | TOKEN_BOOL { $$ = AtomicType::UniformBool->GetAsUnboundVariabilityType(); }
     | TOKEN_INT8 { $$ = AtomicType::UniformInt8->GetAsUnboundVariabilityType(); }
+    | TOKEN_UINT8 { $$ = AtomicType::UniformUInt8->GetAsUnboundVariabilityType(); }
     | TOKEN_INT16 { $$ = AtomicType::UniformInt16->GetAsUnboundVariabilityType(); }
+    | TOKEN_UINT16 { $$ = AtomicType::UniformUInt16->GetAsUnboundVariabilityType(); }
     | TOKEN_INT { $$ = AtomicType::UniformInt32->GetAsUnboundVariabilityType(); }
+    | TOKEN_UINT { $$ = AtomicType::UniformUInt32->GetAsUnboundVariabilityType(); }
     | TOKEN_FLOAT { $$ = AtomicType::UniformFloat->GetAsUnboundVariabilityType(); }
     | TOKEN_DOUBLE { $$ = AtomicType::UniformDouble->GetAsUnboundVariabilityType(); }
     | TOKEN_INT64 { $$ = AtomicType::UniformInt64->GetAsUnboundVariabilityType(); }
+    | TOKEN_UINT64 { $$ = AtomicType::UniformUInt64->GetAsUnboundVariabilityType(); }
     ;
 
 short_vec_specifier
@@ -2200,7 +2209,6 @@ lAddFunctionParams(Declarator *decl) {
     m->symbolTable->PushScope();
 
     if (decl == NULL) {
-        AssertPos(decl->pos, m->errorCount > 0);
         return;
     }
 
@@ -2351,7 +2359,8 @@ lGetConstantInt(Expr *expr, int *value, SourcePos pos, const char *usage) {
     if (expr == NULL)
         return false;
 
-    llvm::Constant *cval = expr->GetConstant(expr->GetType());
+    std::pair<llvm::Constant *, bool> cValPair = expr->GetConstant(expr->GetType());
+    llvm::Constant *cval = cValPair.first;
     if (cval == NULL) {
         Error(pos, "%s must be a compile-time constant.", usage);
         return false;
